@@ -14,7 +14,7 @@ Language: en
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 8.0.0
 Suggests: 
-    FITfileR,
+    FITfileR (>= 0.1.11),
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 URL: https://github.com/torfason/starch, https://torfason.github.io/starch/
@@ -29,3 +29,5 @@ Imports:
 Additional_repositories: https://grimbough.r-universe.dev
 Depends: 
     R (>= 4.2.0)
+Remotes:  
+    grimbough/FITfileR
