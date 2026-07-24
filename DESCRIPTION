@@ -14,7 +14,18 @@ Language: en
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 8.0.0
 Suggests: 
+    FITfileR,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 URL: https://github.com/torfason/starch, https://torfason.github.io/starch/
 BugReports: https://github.com/torfason/starch/issues
+Imports: 
+    dplyr,
+    lubridate,
+    R.utils,
+    tibble,
+    withr,
+    xml2
+Additional_repositories: https://grimbough.r-universe.dev
+Depends: 
+    R (>= 4.2.0)
