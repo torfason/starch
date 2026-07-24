@@ -1,0 +1,18 @@
+Package: starch
+Title: Read and Tidy Strava Bulk Export Archives
+Version: 0.0.0
+Authors@R: 
+    person("Magnus Thor", "Torfason", , "m@zulutime.net", role = c("aut", "cre"))
+Description: Reads Strava bulk export archives into tidy, analysis-ready
+    tables. Parses the 'activities.csv' index alongside the accompanying
+    GPS track files in GPX, TCX, and FIT formats, reconciles their
+    differing field sets into a common schema. The end result are tidy,
+    starched, parquet files representing the STrava ARCHive.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Language: en
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 8.0.0
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
