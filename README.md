@@ -5,6 +5,7 @@
 
 <!-- badges: start -->
 
+[![R-CMD-check](https://github.com/torfason/starch/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/torfason/starch/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
 Read Strava bulk export archives into tidy, analysis-ready tables.
