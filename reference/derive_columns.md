@@ -72,6 +72,7 @@ if (FALSE) { # \dontrun{
 read_stream("activities/9973795459.gpx.gz") |>
   addcols_time() |>
   addcols_distance() |>
-  addcols_speed(window = 2)
+  addcols_speed(window = 2) |>
+  relocate_activity_cols()
 } # }
 ```

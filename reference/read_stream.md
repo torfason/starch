@@ -59,7 +59,8 @@ deliberately.
 - `read_fit_stream()`: Read a FIT file (requires the FITfileR package).
   `records()` may return several tibbles when a file has multiple record
   definitions; they are bound. Record fields vary between files, so a
-  safe getter returns `NA` for absent fields.
+  safe getter returns `NA` for absent fields. A file with no record
+  messages (e.g. a workout definition) yields an empty (0 x 0) stream.
 
 ## Examples
 

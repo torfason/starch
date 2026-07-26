@@ -109,7 +109,8 @@ is the running average from the start, not an instantaneous rate.</p></li>
 <span class="r-in"><span><span class="fu"><a href="read_stream.html">read_stream</a></span><span class="op">(</span><span class="st">"activities/9973795459.gpx.gz"</span><span class="op">)</span> <span class="op">|&gt;</span></span></span>
 <span class="r-in"><span>  <span class="fu">addcols_time</span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span></span></span>
 <span class="r-in"><span>  <span class="fu">addcols_distance</span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span></span></span>
-<span class="r-in"><span>  <span class="fu">addcols_speed</span><span class="op">(</span>window <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="fu">addcols_speed</span><span class="op">(</span>window <span class="op">=</span> <span class="fl">2</span><span class="op">)</span> <span class="op">|&gt;</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="relocate_activity_cols.html">relocate_activity_cols</a></span><span class="op">(</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
 </code></pre></div>
     </div>

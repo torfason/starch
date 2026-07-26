@@ -96,7 +96,8 @@ trimmed before parsing.</p></li>
 <li><p><code>read_fit_stream()</code>: Read a FIT file (requires the FITfileR package).
 <code>records()</code> may return several tibbles when a file has multiple record
 definitions; they are bound. Record fields vary between files, so a safe
-getter returns <code>NA</code> for absent fields.</p></li>
+getter returns <code>NA</code> for absent fields. A file with no record messages
+(e.g. a workout definition) yields an empty (0 x 0) stream.</p></li>
 </ul></div>
 
     <div class="section level2">
