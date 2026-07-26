@@ -263,7 +263,10 @@ read_fit_stream <- function(path) {
 
   # Read the file once; take both records and metadata from the same object.
   fit  <- FITfileR::readFitFile(tmp)
-  recs <- FITfileR::records(fit)
+
+  # records() emits a message and returns NULL when a file has no record
+  # messages (e.g. workout-definition files); guard rather than let it print.
+  recs <- if ("record" %in% FITfileR::listMessageTypes(fit)) FITfileR::records(fit) else NULL
   if (!inherits(recs, "data.frame")) recs <- bind_rows(recs)
 
   g <- function(nm) if (nm %in% names(recs)) recs[[nm]] else NA  # safe column
