@@ -27,7 +27,7 @@
 #'   addcols_distance() |>
 #'   addcols_speed(window = 2)
 #' }
-#' @importFrom dplyr mutate
+#' @importFrom dplyr mutate .data
 #' @importFrom tibble tibble
 #' @name derive_columns
 NULL
@@ -39,7 +39,7 @@ addcols_time <- function(d) {
   segtime <- as.numeric(diff(d$timestamp), units = "secs")
   cumtime <- c(0, cumsum(segtime))
   d |>
-    mutate(time = cumtime, .after = timestamp)
+    mutate(time = cumtime, .after = "timestamp")
 }
 
 #' @describeIn derive_columns Add cumulative `distance` (metres) from geodesic
@@ -53,13 +53,13 @@ addcols_distance <- function(d) {
     measure = "geodesic"
   )
   d <- d |>
-    mutate(distance = c(0, cumsum(segdist)), .after = timestamp)
+    mutate(distance = c(0, cumsum(segdist)), .after = "timestamp")
 
   # dev_dist is present for TCX/FIT but not GPX; only add the QA delta when the
   # column exists. (Replaces the original get0("dev_dist") data-mask lookup.)
   if ("dev_dist" %in% names(d)) {
     d <- d |>
-      mutate(dist_diff = dev_dist - distance, .after = distance)
+      mutate(dist_diff = .data$dev_dist - .data$distance, .after = "distance")
   }
   d
 }
@@ -73,14 +73,14 @@ addcols_speed <- function(d, window = 5) {
   d |>
     mutate(
       # Instantaneous speed (m/s), then smoothed in place over the window.
-      speed = c(NA_real_, diff(distance)) / c(NA_real_, diff(time)),
+      speed = c(NA_real_, diff(.data$distance)) / c(NA_real_, diff(.data$time)),
       speed = slider::slide_dbl(
-        speed, mean, na.rm = TRUE,
+        .data$speed, mean, na.rm = TRUE,
         .before = window, .after = window
       ),
-      speed_kmh = speed * 3.6,
-      pace      = 1000 / (speed * 60),
-      .after = time
+      speed_kmh = .data$speed * 3.6,
+      pace      = 1000 / (.data$speed * 60),
+      .after = "time"
     )
 }
 
@@ -91,9 +91,9 @@ addcols_speed <- function(d, window = 5) {
 addcols_speed_naive <- function(d) {
   d |>
     mutate(
-      speed_ms  = distance / time,
-      speed_kmh = speed_ms * 3.6,
-      pace      = 1000 / (speed_ms * 60),
-      .after = time
+      speed_ms  = .data$distance / .data$time,
+      speed_kmh = .data$speed_ms * 3.6,
+      pace      = 1000 / (.data$speed_ms * 60),
+      .after = "time"
     )
 }
