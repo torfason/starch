@@ -33,7 +33,7 @@ addcols_speed_naive(d)
 
   Half-width, in points, of the centred moving-average window used to
   smooth instantaneous speed (`.before`/`.after` in
-  `slider::slide_dbl()`).
+  [`slider::slide_dbl()`](https://slider.r-lib.org/reference/slide.html)).
 
 ## Value
 
