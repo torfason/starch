@@ -20,10 +20,10 @@ read_fit_stream(path)
 must be one of \code{gpx}, \code{tcx}, or \code{fit}.}
 }
 \value{
-A tibble with one row per track point. Columns present depend on the
-source but are drawn from \code{timestamp}, \code{lat}, \code{lng}, \code{altitude},
-\code{heartrate}, \code{cadence}, \code{temp}, \code{dev_dist}, \code{velocity_smooth}, \code{watts},
-and \code{grade_smooth}.
+A tibble with one row per track point, drawn from \code{timestamp}, \code{lat},
+\code{lng}, \code{altitude}, \code{heartrate}, \code{cadence}, \code{temp}, \code{dev_dist},
+\code{velocity_smooth}, \code{watts}, and \code{grade_smooth}, plus a
+\code{"activity_metadata"} attribute (see Details above).
 }
 \description{
 \code{read_stream()} reads a single activity track file from a Strava bulk export
@@ -31,6 +31,14 @@ and returns a tibble of per-point stream data, dispatching on the file
 extension to a format-specific reader. GPX, TCX, and FIT are supported,
 including the gzip-compressed (\code{.gz}) files as shipped in the export. Fields
 a given source does not provide are dropped rather than filled with \code{NA}.
+}
+\details{
+Each returned tibble also carries per-activity metadata as \code{attr(x, "activity_metadata")}: a flat named list with elements \code{format}, \code{source},
+\code{sport} (all sports found, slash-joined), \code{sub_sport}, \code{title}, \code{start_time},
+\code{n_sessions}, \code{total_distance}, \code{total_timer_time}, and \code{total_calories},
+with \code{NA} for anything the source does not provide. It is intentionally flat
+(no nesting) so it converts to a one-row table via \code{tibble::as_tibble()}.
+Subsetting and many dplyr verbs drop attributes, so persist it deliberately.
 }
 \section{Functions}{
 \itemize{
@@ -50,6 +58,7 @@ getter returns \code{NA} for absent fields.
 }}
 \examples{
 \dontrun{
-read_stream("activities/9973795459.gpx.gz")
+d <- read_stream("activities/9973795459.gpx.gz")
+attr(d, "activity_metadata")
 }
 }
