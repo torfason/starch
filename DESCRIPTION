@@ -1,6 +1,6 @@
 Package: starch
 Title: Read and Tidy Strava Bulk Export Archives
-Version: 0.0.0
+Version: 0.1.0
 Authors@R: 
     person("Magnus Thor", "Torfason", , "m@zulutime.net", role = c("aut", "cre"))
 Description: Reads Strava bulk export archives into tidy, analysis-ready
