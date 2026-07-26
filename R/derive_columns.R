@@ -26,7 +26,7 @@
 #'   addcols_time() |>
 #'   addcols_distance() |>
 #'   addcols_speed(window = 2) |>
-#'   relocate_activity_columns()
+#'   relocate_activity_cols()
 #' }
 #' @importFrom dplyr mutate .data
 #' @importFrom tibble tibble

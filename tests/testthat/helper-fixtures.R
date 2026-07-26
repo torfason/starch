@@ -10,6 +10,22 @@ fixture_workout <- function(name) {
   system.file("extdata/workouts", name, package = "starch", mustWork = TRUE)
 }
 
+# Absolute paths to all vendored activity fixtures.
+fixture_activities <- function() {
+  list.files(
+    system.file("extdata/activities", package = "starch"),
+    pattern = "\\.(gpx|tcx|fit)\\.gz$", full.names = TRUE
+  )
+}
+
+# Absolute paths to all vendored workout fixtures.
+fixture_workouts <- function() {
+  list.files(
+    system.file("extdata/workouts", package = "starch"),
+    pattern = "\\.(gpx|tcx|fit)\\.gz$", full.names = TRUE
+  )
+}
+
 
 # The fields every activity_metadata record must expose, in order.
 meta_fields <- c(
@@ -21,11 +37,6 @@ meta_fields <- c(
 
 # --- Managing thorough test runs ---
 
-# Function to run tests thoroughly - even slow ones
-test_thorough <- function() {
-  # Skip unless the caller opted into the slow, exhaustive tests.
-  withr::with_envvar(c(STARCH_TEST_THOROUGH = "true"), devtools::test())
-}
 
 # Simple boolean to check the env var for including the slow, exhaustive tests.
 in_thorough_test_run <- function(){

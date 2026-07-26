@@ -245,7 +245,8 @@ read_tcx_stream <- function(path) {
 #' @describeIn read_stream Read a FIT file (requires the FITfileR package).
 #'   `records()` may return several tibbles when a file has multiple record
 #'   definitions; they are bound. Record fields vary between files, so a safe
-#'   getter returns `NA` for absent fields.
+#'   getter returns `NA` for absent fields. A file with no record messages
+#'   (e.g. a workout definition) yields an empty (0 x 0) stream.
 #' @export
 read_fit_stream <- function(path) {
 
@@ -269,7 +270,12 @@ read_fit_stream <- function(path) {
   recs <- if ("record" %in% FITfileR::listMessageTypes(fit)) FITfileR::records(fit) else NULL
   if (!inherits(recs, "data.frame")) recs <- bind_rows(recs)
 
-  g <- function(nm) if (nm %in% names(recs)) recs[[nm]] else NA  # safe column
+  # A recordless file (e.g. a workout definition) leaves recs with 0 rows;
+  # matching the NA length to nrow(recs) keeps every synthesised column
+  # 0-length, so the result is a genuine empty (0 x 0) stream rather than a
+  # phantom 1-row tibble.
+  n <- nrow(recs)
+  g <- function(nm) if (nm %in% names(recs)) recs[[nm]] else rep(NA, n)  # safe column
 
   d <- tibble(
     timestamp       = g("timestamp"),
