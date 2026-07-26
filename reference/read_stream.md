@@ -28,10 +28,23 @@ read_fit_stream(path)
 
 ## Value
 
-A tibble with one row per track point. Columns present depend on the
-source but are drawn from `timestamp`, `lat`, `lng`, `altitude`,
-`heartrate`, `cadence`, `temp`, `dev_dist`, `velocity_smooth`, `watts`,
-and `grade_smooth`.
+A tibble with one row per track point, drawn from `timestamp`, `lat`,
+`lng`, `altitude`, `heartrate`, `cadence`, `temp`, `dev_dist`,
+`velocity_smooth`, `watts`, and `grade_smooth`, plus a
+`"activity_metadata"` attribute (see Details above).
+
+## Details
+
+Each returned tibble also carries per-activity metadata as
+`attr(x, "activity_metadata")`: a flat named list with elements
+`format`, `source`, `sport` (all sports found, slash-joined),
+`sub_sport`, `title`, `start_time`, `n_sessions`, `total_distance`,
+`total_timer_time`, and `total_calories`, with `NA` for anything the
+source does not provide. It is intentionally flat (no nesting) so it
+converts to a one-row table via
+[`tibble::as_tibble()`](https://tibble.tidyverse.org/reference/as_tibble.html).
+Subsetting and many dplyr verbs drop attributes, so persist it
+deliberately.
 
 ## Functions
 
@@ -52,6 +65,7 @@ and `grade_smooth`.
 
 ``` r
 if (FALSE) { # \dontrun{
-read_stream("activities/9973795459.gpx.gz")
+d <- read_stream("activities/9973795459.gpx.gz")
+attr(d, "activity_metadata")
 } # }
 ```
