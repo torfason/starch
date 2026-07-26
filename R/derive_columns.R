@@ -25,7 +25,8 @@
 #' read_stream("activities/9973795459.gpx.gz") |>
 #'   addcols_time() |>
 #'   addcols_distance() |>
-#'   addcols_speed(window = 2)
+#'   addcols_speed(window = 2) |>
+#'   relocate_activity_columns()
 #' }
 #' @importFrom dplyr mutate .data
 #' @importFrom tibble tibble
@@ -96,4 +97,32 @@ addcols_speed_naive <- function(d) {
       pace      = 1000 / (.data$speed_ms * 60),
       .after = "time"
     )
+}
+
+# Canonical column order for stream tibbles. relocate_activity_cols() moves
+# whichever of these are present to the front, in this order; any column not
+# listed is kept, in its existing relative order, after the listed ones.
+activity_col_order <- c(
+  "timestamp", "time", "distance",                  # axes
+  "lat", "lng", "altitude",                         # position
+  "speed", "speed_ms", "speed_kmh", "pace",         # movement (robust)
+  "heartrate", "cadence", "watts", "temp",          # recorded sensors
+  "velocity_smooth", "dev_dist", "grade_smooth",    # device-reported
+  "dist_diff"                                       # QA diagnostic
+)
+
+#' Reorder stream columns into the canonical activity layout
+#'
+#' Relocates whichever canonical stream columns are present into a fixed order
+#' (axes, position, speed/pace, recorded sensors, device-reported channels, then
+#' diagnostics). Uses [dplyr::any_of()], so absent columns are skipped rather
+#' than raising an error, and any column not in the canonical list is kept, in
+#' its existing relative order, after the listed ones.
+#'
+#' @param d A stream tibble, e.g. from [read_stream()] after the `addcols_*`
+#'   transforms.
+#' @return `d` with columns relocated; contents and row order unchanged.
+#' @export
+relocate_activity_cols <- function(d) {
+  dplyr::relocate(d, dplyr::any_of(activity_col_order))
 }
