@@ -78,6 +78,10 @@ Ordering is enforced by relocating to this list, not by per-function `.after` pl
 - The exhaustive loop over every fixture is gated by `skip_if_not_thorough()` and only runs under `test_thorough()`. Fast single-file tests always run.
 - Activity tests live in `test-read_streams.R` and `test-derive_columns.R`; recordless workout behavior in `test-workouts.R`.
 
+## TODO
+
+- `strava_activities_to_parquet()` currently drops `attr(d, "activity_metadata")` on write, because `nanoparquet::write_parquet()` does not carry attributes. Add an attribute-preserving write/read wrapper and persist the metadata through the Parquet round-trip.
+
 ## Gotchas
 
 - Native pipe placeholder (`|> f(x = _)`) requires R >= 4.2 – that is the package's declared floor.

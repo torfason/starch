@@ -9,7 +9,7 @@ elapsed <- function(t0) {
 # repository is initialised; edit here if the set of artefacts changes.
 strava_repo_ignore <- c(
   "activities_parquet/",
-  "activities_hash/"
+  "activities_hashes/"
 )
 
 #' Locate the most recent Strava export archive

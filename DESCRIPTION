@@ -27,9 +27,11 @@ Imports:
     gert,
     here,
     lubridate,
+    nanoparquet,
     R.utils,
     slider,
     tibble,
+    tools,
     withr,
     xml2,
     zip
