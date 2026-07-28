@@ -13,7 +13,8 @@ strava_zip_to_repo(
   zip = latest_strava_zip(),
   repo = here("strava_repo"),
   commit = TRUE,
-  author = NULL
+  author = NULL,
+  quiet = FALSE
 )
 ```
 
@@ -41,6 +42,10 @@ strava_zip_to_repo(
   [`gert::git_commit()`](https://docs.ropensci.org/gert/reference/git_commit.html).
   When `NULL`, the configured git identity is used and its absence is
   reported before any files are written.
+
+- quiet:
+
+  Suppress progress reporting.
 
 ## Value
 
