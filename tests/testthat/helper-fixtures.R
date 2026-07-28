@@ -66,3 +66,16 @@ skip_if_not_thorough <- function() {
   }
 }
 
+# Function to run tests thoroughly - even slow ones
+#
+# This function is designed to only run as an interactive function, to be
+# loaded only when loading package with all test harnesses using ctrl-l.
+# To prevent R CMD check from analyzing devtools as a dependency (which
+# causes it to hang) devtools::test() is wrapped in eval(pars()).
+test_thorough <- function() {
+  # Skip unless the caller opted into the slow, exhaustive tests.
+  # Wrapped in eval(parse()) to resolve spurious R CMD check issues.
+  withr::with_envvar(c(STARCH_TEST_THOROUGH = "true"),
+                     eval(parse(text = "devtools::test()")))
+}
+
