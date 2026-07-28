@@ -51,11 +51,13 @@ test_that("addcols_does not regress on existing columns for a representative run
     addcols_speed_naive() |>
     addcols_latlng_offset() |>
     relocate_activity_cols()
-  gold_digest <- c(timestamp = "28b17019", time = "be290342", distance = "e75bfc18",
-    lat = "0d103536", lng = "ae82daa5", altitude = "b3fa304d", speed_ms = "2a3ac2f6",
-    speed_kmh = "3ff367f1", pace = "545c3f9f", heartrate = "7ec83ff7",
-    lat_offset = "f19c6f8e", lng_offset = "7b25d016")
-  d |>
-    sapply(digest::digest, "crc32") |> # dput()
-    expect_equal(gold_digest)
+
+  # Structure is exactly reproducible - assert it exactly.
+  d |>  expect_named(c("timestamp", "time", "distance", "lat", "lng", "altitude",
+      "speed_ms", "speed_kmh", "pace", "heartrate", "lat_offset", "lng_offset" ))
+
+  # Values are not bit-reproducible across platforms - compare with tolerance.
+  d |> sapply(typeof) |> expect_snapshot_value(style = "json2")
+  d |> summarize_stream() |> expect_snapshot_value(style = "json2")
+
 })

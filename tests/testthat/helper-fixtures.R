@@ -34,6 +34,22 @@ meta_fields <- c(
 )
 
 
+# --- Helper function for test values ----
+
+# Compact per-column summary for snapshot tests.
+summarize_stream <- function(d) {
+  tibble::tibble(
+    column = names(d),
+    type = sapply(d, typeof),
+    n_na = vapply(d, \(x) sum(is.na(x)), integer(1), USE.NAMES = FALSE),
+    mean = vapply(d, \(x) if (is.character(x)) NA_real_
+                  else mean(as.numeric(x), na.rm = TRUE),
+                  numeric(1), USE.NAMES = FALSE),
+    hash = vapply(d, \(x) if (is.character(x)) tools::md5sum(x)
+                  else NA_character_,
+                  character(1), USE.NAMES = FALSE)
+  )
+}
 
 # --- Managing thorough test runs ---
 

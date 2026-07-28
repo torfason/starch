@@ -15,8 +15,7 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 8.0.0
 Suggests: 
     FITfileR (>= 0.1.11),
-    testthat (>= 3.0.0),
-    digest
+    testthat (>= 3.0.0)
 Config/testthat/edition: 3
 URL: https://github.com/torfason/starch, https://torfason.github.io/starch/
 BugReports: https://github.com/torfason/starch/issues
