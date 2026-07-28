@@ -32,6 +32,7 @@ library(starch)
   [`addcols_distance()`](https://torfason.github.io/starch/reference/derive_columns.md)
   [`addcols_speed()`](https://torfason.github.io/starch/reference/derive_columns.md)
   [`addcols_speed_naive()`](https://torfason.github.io/starch/reference/derive_columns.md)
+  [`addcols_latlng_offset()`](https://torfason.github.io/starch/reference/derive_columns.md)
   : Add derived columns to a stream tibble
 - [`read_stream()`](https://torfason.github.io/starch/reference/read_stream.md)
   [`read_gpx_stream()`](https://torfason.github.io/starch/reference/read_stream.md)

@@ -1,7 +1,7 @@
 # Add derived columns to a stream tibble
 
-A family of transforms that add elapsed time, cumulative distance, and
-speed to a stream tibble from
+A family of transforms that add elapsed time, cumulative distance,
+speed, and recentred coordinates to a stream tibble from
 [`read_stream()`](https://torfason.github.io/starch/reference/read_stream.md).
 They are pure `tibble` -\> `tibble` functions and assume rows are
 ordered by `timestamp` (and that `d` is non-empty). Distance and speed
@@ -19,6 +19,8 @@ addcols_distance(d)
 addcols_speed(d, window = 5)
 
 addcols_speed_naive(d)
+
+addcols_latlng_offset(d)
 ```
 
 ## Arguments
@@ -38,7 +40,7 @@ addcols_speed_naive(d)
 ## Value
 
 `d` with the columns described for each function inserted after the
-relevant existing column.
+relevant existing column, or appended where there is no such column.
 
 ## Details
 
@@ -64,6 +66,11 @@ emit `speed_kmh` and `pace`, so apply only one of them.
   cumulative `distance / time`, plus `speed_kmh` and `pace` (min/km).
   Unsmoothed; this is the running average from the start, not an
   instantaneous rate.
+
+- `addcols_latlng_offset()`: Add `lat_offset` and `lng_offset`
+  (degrees): `lat`/`lng` relative to the first point that has both.
+  Absolute coordinates dwarf the within-activity variation, so the
+  offsets make movement legible when eyeballing a stream.
 
 ## Examples
 
