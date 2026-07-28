@@ -20,6 +20,7 @@ Config/testthat/edition: 3
 URL: https://github.com/torfason/starch, https://torfason.github.io/starch/
 BugReports: https://github.com/torfason/starch/issues
 Imports: 
+    cli,
     dplyr,
     fs,
     geodist,

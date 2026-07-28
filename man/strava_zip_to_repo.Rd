@@ -8,7 +8,8 @@ strava_zip_to_repo(
   zip = latest_strava_zip(),
   repo = here("strava_repo"),
   commit = TRUE,
-  author = NULL
+  author = NULL,
+  quiet = FALSE
 )
 }
 \arguments{
@@ -24,6 +25,8 @@ dealt with.}
 \item{author}{Optional git signature for the commit, as accepted by
 \code{\link[gert:git_commit]{gert::git_commit()}}. When \code{NULL}, the configured git identity is used and
 its absence is reported before any files are written.}
+
+\item{quiet}{Suppress progress reporting.}
 }
 \value{
 The \code{gert::git_status()} table of what changed, invisibly.

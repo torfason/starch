@@ -1,3 +1,9 @@
+# Human-readable elapsed time since `t0`, for progress reporting.
+elapsed <- function(t0) {
+  secs <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  if (secs < 60) sprintf("%.1fs", secs) else sprintf("%.1f min", secs / 60)
+}
+
 # Generated artefacts that live inside the repo but are not part of the
 # imported export, and so are never committed. Written to .gitignore when a
 # repository is initialised; edit here if the set of artefacts changes.
@@ -100,20 +106,32 @@ latest_strava_zip <- function(dir = here("strava_zips"),
 #' @param author Optional git signature for the commit, as accepted by
 #'   [gert::git_commit()]. When `NULL`, the configured git identity is used and
 #'   its absence is reported before any files are written.
+#' @param quiet Suppress progress reporting.
 #'
 #' @return The `gert::git_status()` table of what changed, invisibly.
 #' @export
 strava_zip_to_repo <- function(zip = latest_strava_zip(),
                                repo = here("strava_repo"),
                                commit = TRUE,
-                               author = NULL) {
+                               author = NULL,
+                               quiet = FALSE) {
+  t_all <- Sys.time()
   if (!file.exists(zip)) {
     stop("Strava zip not found: ", zip, call. = FALSE)
   }
 
   ## Inspect the archive before touching the file system --------------------
+  if (!quiet) {
+    cli::cli_h1("Importing Strava export")
+    cli::cli_alert_info("Archive {.file {basename(zip)}}")
+  }
   entries <- zip::zip_list(zip)$filename
   paths <- gsub("\\\\", "/", entries)
+  n_entries <- length(paths)
+  if (!quiet) {
+    n_tracks <- sum(grepl("[.](fit|gpx|tcx)([.]gz)?$", paths, ignore.case = TRUE))
+    cli::cli_alert_info("{n_entries} entr{?y/ies}, of which {n_tracks} track file{?s}")
+  }
 
   unsafe <-
     grepl("(^|/)[.]git(/|$)", paths) |  # repository metadata
@@ -137,6 +155,7 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
     fs::dir_create(repo)
     gert::git_init(repo)
     writeLines(strava_repo_ignore, fs::path(repo, ".gitignore"))
+    if (!quiet) cli::cli_alert_success("Initialised repository at {.path {repo}}")
   } else {
     if (!file.exists(fs::path(repo, ".git"))) {
       stop(
@@ -146,6 +165,8 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
         call. = FALSE
       )
     }
+    if (!quiet) cli::cli_alert_info("Checking working tree at {.path {repo}} ...")
+    t0 <- Sys.time()
     if (nrow(gert::git_status(repo = repo)) > 0L) {
       stop(
         "Repository has uncommitted changes:\n  ", repo, "\n",
@@ -153,6 +174,7 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
         call. = FALSE
       )
     }
+    if (!quiet) cli::cli_alert_success("Working tree clean ({elapsed(t0)})")
   }
 
   # Fail now rather than after a full extraction if the commit could not be made.
@@ -171,7 +193,10 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
   }
 
   ## Extract, overwriting whatever is already there -------------------------
+  if (!quiet) cli::cli_alert_info("Extracting {n_entries} entr{?y/ies} ...")
+  t0 <- Sys.time()
   zip::unzip(zip, exdir = repo)
+  if (!quiet) cli::cli_alert_success("Extracted ({elapsed(t0)})")
 
   ## Compress whatever arrived uncompressed ---------------------------------
   # Entries that are already .gz - most tracks - are left exactly as Strava
@@ -181,22 +206,48 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
   extracted <- fs::path(repo, paths)
   plain <- extracted[grepl("[.](fit|gpx|tcx)$", paths, ignore.case = TRUE)]
   plain <- plain[file.exists(plain)]
-  for (f in plain) {
-    R.utils::gzip(f, overwrite = TRUE, remove = TRUE, compression = 9)
+  if (length(plain) == 0L) {
+    if (!quiet) cli::cli_alert_info("No uncompressed track files to compress")
+  } else {
+    t0 <- Sys.time()
+    if (!quiet) {
+      cli::cli_progress_bar(
+        "Compressing tracks", total = length(plain), clear = FALSE
+      )
+    }
+    for (f in plain) {
+      R.utils::gzip(f, overwrite = TRUE, remove = TRUE, compression = 9)
+      if (!quiet) cli::cli_progress_update()
+    }
+    if (!quiet) {
+      cli::cli_progress_done()
+      cli::cli_alert_success(
+        "Compressed {length(plain)} file{?s} ({elapsed(t0)})"
+      )
+    }
   }
 
   ## Commit ------------------------------------------------------------------
+  # Both this walk and the staging below are O(files in the repo) inside
+  # libgit2, and on a full export each can take minutes.
+  if (!quiet) cli::cli_alert_info("Scanning repository for changes ...")
+  t0 <- Sys.time()
   status <- gert::git_status(repo = repo)
+  if (!quiet) {
+    cli::cli_alert_success("{nrow(status)} change{?s} found ({elapsed(t0)})")
+  }
   if (nrow(status) == 0L) {
-    message("No changes to commit.")
+    if (!quiet) cli::cli_alert_info("Nothing to commit; import complete")
     return(invisible(status))
   }
   if (commit) {
     # Staging everything is safe: the working tree was verified clean above, so
     # nothing staged here predates this import, and .gitignore holds back the
     # generated artefacts.
+    if (!quiet) cli::cli_alert_info("Staging and committing ...")
+    t0 <- Sys.time()
     gert::git_add(".", repo = repo)
-    gert::git_commit(
+    sha <- gert::git_commit(
       message = sprintf(
         "Import %s (%d file%s changed)",
         basename(zip), nrow(status), if (nrow(status) == 1L) "" else "s"
@@ -204,6 +255,14 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
       repo = repo,
       author = author
     )
+    if (!quiet) {
+      cli::cli_alert_success("Committed {.val {substr(sha, 1, 10)}} ({elapsed(t0)})")
+    }
+  } else if (!quiet) {
+    cli::cli_alert_warning(
+      "Left uncommitted; the next import will refuse to run until this is resolved"
+    )
   }
+  if (!quiet) cli::cli_alert_success("Import complete ({elapsed(t_all)})")
   invisible(status)
 }
