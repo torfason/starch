@@ -142,6 +142,14 @@ Ordering is enforced by relocating to this list, not by per-function
   `test-derive_columns.R`; recordless workout behavior in
   `test-workouts.R`.
 
+## TODO
+
+- [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
+  currently drops `attr(d, "activity_metadata")` on write, because
+  [`nanoparquet::write_parquet()`](https://nanoparquet.r-lib.org/reference/write_parquet.html)
+  does not carry attributes. Add an attribute-preserving write/read
+  wrapper and persist the metadata through the Parquet round-trip.
+
 ## Gotchas
 
 - Native pipe placeholder (`|> f(x = _)`) requires R \>= 4.2 – that is

@@ -107,6 +107,11 @@ dist_diff                          # QA diagnostic</code></pre>
 <li>Activity tests live in <code>test-read_streams.R</code> and <code>test-derive_columns.R</code>; recordless workout behavior in <code>test-workouts.R</code>.</li>
 </ul></div>
 <div class="section level2">
+<h2 id="todo">TODO<a class="anchor" aria-label="anchor" href="#todo"></a></h2>
+<ul><li>
+<code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> currently drops <code>attr(d, "activity_metadata")</code> on write, because <code><a href="https://nanoparquet.r-lib.org/reference/write_parquet.html" class="external-link">nanoparquet::write_parquet()</a></code> does not carry attributes. Add an attribute-preserving write/read wrapper and persist the metadata through the Parquet round-trip.</li>
+</ul></div>
+<div class="section level2">
 <h2 id="gotchas">Gotchas<a class="anchor" aria-label="anchor" href="#gotchas"></a></h2>
 <ul><li>Native pipe placeholder (<code>|&gt; f(x = _)</code>) requires R &gt;= 4.2 – that is the package’s declared floor.</li>
 <li>Dependencies: treat <code>DESCRIPTION</code> as authoritative; do not assume the list from memory. FITfileR needs its <code>Remotes</code> / <code>Additional_repositories</code> entries to install.</li>

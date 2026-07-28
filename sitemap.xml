@@ -10,6 +10,7 @@
 <url><loc>https://torfason.github.io/starch/reference/latest_strava_zip.html</loc></url>
 <url><loc>https://torfason.github.io/starch/reference/read_stream.html</loc></url>
 <url><loc>https://torfason.github.io/starch/reference/relocate_activity_cols.html</loc></url>
+<url><loc>https://torfason.github.io/starch/reference/strava_activities_to_parquet.html</loc></url>
 <url><loc>https://torfason.github.io/starch/reference/strava_zip_to_repo.html</loc></url>
 </urlset>
 

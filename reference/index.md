@@ -17,5 +17,7 @@
   : Read a Strava export track file into a stream tibble
 - [`relocate_activity_cols()`](https://torfason.github.io/starch/reference/relocate_activity_cols.md)
   : Reorder stream columns into the canonical activity layout
+- [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
+  : Convert repository activities to Parquet
 - [`strava_zip_to_repo()`](https://torfason.github.io/starch/reference/strava_zip_to_repo.md)
   : Import a Strava export archive into a version-controlled repository
