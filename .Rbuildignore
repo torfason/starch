@@ -9,4 +9,5 @@
 ^pkgdown$
 ^data-raw$
 ^AGENTS\.md$
-^dev$
+^strava_repo$
+^strava_zips$
