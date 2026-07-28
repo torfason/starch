@@ -4,8 +4,9 @@
 
 #' Add derived columns to a stream tibble
 #'
-#' A family of transforms that add elapsed time, cumulative distance, and speed
-#' to a stream tibble from [read_stream()]. They are pure `tibble` -> `tibble`
+#' A family of transforms that add elapsed time, cumulative distance, speed, and
+#' recentred coordinates to a stream tibble from [read_stream()]. They are pure
+#' `tibble` -> `tibble`
 #' functions and assume rows are ordered by `timestamp` (and that `d` is
 #' non-empty). Distance and speed additionally require `lat`/`lng`; speed
 #' requires that `time` and `distance` already exist, so the usual order is
@@ -19,7 +20,7 @@
 #'   used to smooth instantaneous speed (`.before`/`.after` in
 #'   [slider::slide_dbl()]).
 #' @return `d` with the columns described for each function inserted after the
-#'   relevant existing column.
+#'   relevant existing column, or appended where there is no such column.
 #' @examples
 #' \dontrun{
 #' read_stream("activities/9973795459.gpx.gz") |>
@@ -48,13 +49,26 @@ addcols_time <- function(d) {
 #'   present (TCX/FIT), also add `dist_diff` = `dev_dist` - `distance` for QA.
 #' @export
 addcols_distance <- function(d) {
-  segdist <- geodist::geodist(
-    tibble(lon = d$lng, lat = d$lat),
-    sequential = TRUE,
-    measure = "geodesic"
-  )
+  # Distance is accumulated over points that actually have coordinates. Feeding
+  # NA lat/lng straight into geodist() yields NA segments, and cumsum() then
+  # propagates the first NA to every later row - so a single missing fix would
+  # wipe out cumulative distance for the rest of the track. Instead, take the
+  # geodesic between successive *valid* points (a straight line bridges each
+  # gap) and leave the missing-coordinate rows themselves as NA.
+  valid <- !is.na(d$lat) & !is.na(d$lng)
+  cumdist <- rep(NA_real_, nrow(d))
+  if (sum(valid) >= 2) {
+    segdist <- geodist::geodist(
+      tibble(lon = d$lng[valid], lat = d$lat[valid]),
+      sequential = TRUE,
+      measure = "geodesic"
+    )
+    cumdist[valid] <- c(0, cumsum(segdist))
+  } else if (sum(valid) == 1) {
+    cumdist[valid] <- 0
+  }
   d <- d |>
-    mutate(distance = c(0, cumsum(segdist)), .after = "timestamp")
+    mutate(distance = cumdist, .after = "timestamp")
 
   # dev_dist is present for TCX/FIT but not GPX; only add the QA delta when the
   # column exists. (Replaces the original get0("dev_dist") data-mask lookup.)
@@ -99,6 +113,26 @@ addcols_speed_naive <- function(d) {
     )
 }
 
+#' @describeIn derive_columns Add `lat_offset` and `lng_offset` (degrees):
+#'   `lat`/`lng` relative to the first point that has both. Absolute
+#'   coordinates dwarf the within-activity variation, so the offsets make
+#'   movement legible when eyeballing a stream.
+#' @export
+addcols_latlng_offset <- function(d) {
+  # Anchor on the first point carrying both coordinates, so a leading gap in
+  # the fix does not send the whole track to NA. Both offsets share one anchor
+  # point, so they stay a consistent origin rather than two independent ones.
+  anchored <- !is.na(d$lat) & !is.na(d$lng)
+  lat0 <- d$lat[anchored][1]
+  lng0 <- d$lng[anchored][1]
+
+  d |>
+    mutate(
+      lat_offset = .data$lat - lat0,
+      lng_offset = .data$lng - lng0
+    )
+}
+
 # Canonical column order for stream tibbles. relocate_activity_cols() moves
 # whichever of these are present to the front, in this order; any column not
 # listed is kept, in its existing relative order, after the listed ones.
@@ -108,7 +142,8 @@ activity_col_order <- c(
   "speed", "speed_ms", "speed_kmh", "pace",         # movement (robust)
   "heartrate", "cadence", "watts", "temp",          # recorded sensors
   "velocity_smooth", "dev_dist", "grade_smooth",    # device-reported
-  "dist_diff"                                       # QA diagnostic
+  "dist_diff",                                      # QA diagnostic
+  "lat_offset", "lng_offset"                        # recentred position
 )
 
 #' Reorder stream columns into the canonical activity layout

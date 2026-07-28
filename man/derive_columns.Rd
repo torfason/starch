@@ -6,6 +6,7 @@
 \alias{addcols_distance}
 \alias{addcols_speed}
 \alias{addcols_speed_naive}
+\alias{addcols_latlng_offset}
 \title{Add derived columns to a stream tibble}
 \usage{
 addcols_time(d)
@@ -15,6 +16,8 @@ addcols_distance(d)
 addcols_speed(d, window = 5)
 
 addcols_speed_naive(d)
+
+addcols_latlng_offset(d)
 }
 \arguments{
 \item{d}{A stream tibble from \code{\link[=read_stream]{read_stream()}}, ordered by \code{timestamp}.}
@@ -25,11 +28,12 @@ used to smooth instantaneous speed (\code{.before}/\code{.after} in
 }
 \value{
 \code{d} with the columns described for each function inserted after the
-relevant existing column.
+relevant existing column, or appended where there is no such column.
 }
 \description{
-A family of transforms that add elapsed time, cumulative distance, and speed
-to a stream tibble from \code{\link[=read_stream]{read_stream()}}. They are pure \code{tibble} -> \code{tibble}
+A family of transforms that add elapsed time, cumulative distance, speed, and
+recentred coordinates to a stream tibble from \code{\link[=read_stream]{read_stream()}}. They are pure
+\code{tibble} -> \code{tibble}
 functions and assume rows are ordered by \code{timestamp} (and that \code{d} is
 non-empty). Distance and speed additionally require \code{lat}/\code{lng}; speed
 requires that \code{time} and \code{distance} already exist, so the usual order is
@@ -56,6 +60,11 @@ side.
 \item \code{addcols_speed_naive()}: Add naive average \code{speed_ms} (m/s) from cumulative
 \code{distance / time}, plus \code{speed_kmh} and \code{pace} (min/km). Unsmoothed; this
 is the running average from the start, not an instantaneous rate.
+
+\item \code{addcols_latlng_offset()}: Add \code{lat_offset} and \code{lng_offset} (degrees):
+\code{lat}/\code{lng} relative to the first point that has both. Absolute
+coordinates dwarf the within-activity variation, so the offsets make
+movement legible when eyeballing a stream.
 
 }}
 \examples{
