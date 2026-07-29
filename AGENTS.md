@@ -4,9 +4,9 @@ Guidance for AI agents (and humans) working in this repository. Keep it current 
 
 ## Project
 
-`starch` is an R package for reading Strava bulk-export track files (GPX, TCX, FIT, including the gzip-compressed `.gz` files as shipped) into tidy, analysis-ready stream tibbles, and deriving per-point columns (elapsed time, cumulative distance, speed). 
+`starch` is an R package for reading Strava bulk-export track files (GPX, TCX, FIT, including the gzip-compressed `.gz` files as shipped) into tidy, analysis-ready stream tibbles, and deriving per-point columns (elapsed time, cumulative distance, speed).
 
-Longer term it will grow a file → Parquet → reports pipeline.
+It also carries the pipeline that feeds those readers: importing a Strava export zip into a version-controlled repository, and converting the archived activities to Parquet. Reports reading from the Parquet layer are still to come.
 
 - Repo: `torfason/starch` on GitHub; default branch `main`.
 - Docs site: pkgdown at `torfason.github.io/starch/`.
@@ -32,7 +32,26 @@ test_thorough()          # run tests including the slow exhaustive fixture loop
 Source lives in `R/`:
 
 - `read_streams.R` – the reader family. `read_stream(path)` dispatches on the extension (after stripping `.gz`) to `read_gpx_stream()`, `read_tcx_stream()`, or `read_fit_stream()`. Each reads the file **once** and returns a stream tibble (one row per track point) with columns drawn from `timestamp`, `lat`, `lng`, `altitude`, `heartrate`, `cadence`, `temp`, `dev_dist`, `velocity_smooth`, `watts`, `grade_smooth`. `drop_empty_cols()` removes any column that is entirely `NA`.
-- `derive_columns.R` – the `addcols_*` transforms: `addcols_time()`, `addcols_distance()` (adds `distance`, plus `dist_diff` when device distance `dev_dist` is present), `addcols_speed()` (smoothed), `addcols_speed_naive()`. Pure tibble → tibble; documented as one family via `@describeIn`.
+- `derive_columns.R` – the `addcols_*` transforms: `addcols_time()`, `addcols_distance()` (adds `distance`, plus `dist_diff` when device distance `dev_dist` is present), `addcols_speed()` (smoothed), `addcols_speed_naive()`, `addcols_latlng_offset()` (coordinates relative to the first fix, since the absolute values dwarf the within-activity variation). Pure tibble → tibble; documented as one family via `@describeIn`. Also holds `activity_col_order` and `relocate_activity_cols()`.
+- `strava_repo.R` – export import. `latest_strava_zip()` picks the most recent archive from a directory; `strava_zip_to_repo()` extracts it into a git repository, gzips the tracks that arrived uncompressed, and commits.
+- `activities_parquet.R` – `strava_activities_to_parquet()` converts archived activities to one Parquet file each, rebuilding only what changed. The internal `content_check()` implements the staleness test.
+
+### Pipeline stages
+
+```
+strava_zips/*.zip  --strava_zip_to_repo()-->  strava_repo/
+strava_repo/activities/  --strava_activities_to_parquet()-->  strava_repo/activities_parquet/
+```
+
+The repository holds the export verbatim under version control: every import extracts the whole archive and overwrites, because activities can be edited in Strava after the fact, so a file's presence says nothing about whether its content is current. Git determines what actually changed. Generated artefacts (`activities_parquet/`, `activities_hashes/`) live inside the repository but are held out of it by the `.gitignore` written at init, from the `strava_repo_ignore` constant.
+
+`strava_zip_to_repo()` refuses to run unless the target is either empty or a git repository with a clean working tree. That guard is what makes unattended overwriting safe, and it also makes a failed import recoverable with `git reset --hard`.
+
+### Parquet staleness
+
+Because every import rewrites the whole archive, modification times say nothing about whether an activity changed. `content_check()` instead records each input's md5 as an **empty marker file** in `activities_hashes/`, named for the hash and stamped with the time that content was first seen. An activity is rebuilt when its Parquet output is older than its marker – which happens only when the bytes genuinely differ. The plain mtime comparison is returned alongside as `semistale`, for comparison only.
+
+A conversion that fails leaves an old or absent output against a fresh marker, so it stays stale and is retried on the next run.
 
 ### Per-activity metadata
 
@@ -56,6 +75,7 @@ rules:
 - **`.data` pronoun in package code.** Inside `mutate()` etc., reference columns as `.data$col` (imported via `@importFrom dplyr .data`) and pass tidyselect args like `.after` as strings, to avoid the "no visible binding" NOTE.
 - **FIT is optional.** `FITfileR` is a `Suggests` (installed from r-universe / GitHub, not CRAN). Guard its use with `requireNamespace()` in code and `skip_if_not_installed("FITfileR")` in tests.
 - **Prose style.** Use en dashes (–), not em dashes (—), in comments and docs.
+- **Long-running functions report progress.** Anything that moves thousands of files (`strava_zip_to_repo()`, `strava_activities_to_parquet()`) reports each phase with `cli`, times the expensive steps with the internal `elapsed()` helper, and shows a progress bar over per-file loops. Every such function takes `quiet = FALSE`, and the reporting is guarded with `if (!quiet)` rather than suppressed wholesale.
 
 ### Canonical column order
 
@@ -68,22 +88,39 @@ speed, speed_ms, speed_kmh, pace   # movement (robust; front-of-house)
 heartrate, cadence, watts, temp    # recorded sensors
 velocity_smooth, dev_dist, grade_smooth   # device-reported channels
 dist_diff                          # QA diagnostic
+lat_offset, lng_offset             # recentred position
 ```
 
-Ordering is enforced by relocating to this list, not by per-function `.after` placement.
+`relocate_activity_cols()` is the single authority on ordering; the `.after` arguments still present in some `addcols_*` functions are vestigial and should not be relied on or extended.
 
 ## Testing
 
 - Tests live in `tests/testthat/`. `helper-fixtures.R` provides fixture-path helpers (`fixture_activity()`, `fixture_workout()`, and the all-paths `fixture_activities()`, `fixture_workouts()`), the `meta_fields` vector, and the thorough-run helpers.
 - The exhaustive loop over every fixture is gated by `skip_if_not_thorough()` and only runs under `test_thorough()`. Fast single-file tests always run.
 - Activity tests live in `test-read_streams.R` and `test-derive_columns.R`; recordless workout behavior in `test-workouts.R`.
+- Golden tests use `summarize_stream()` (in `helper-fixtures.R`) to reduce a stream to one row per column – name, NA count, mean, and a hash for character columns – and compare with `expect_snapshot_value(style = "json2")`, with snapshots under `_snaps/`. Comparing summaries rather than hashing whole columns is deliberate: `expect_equal()` semantics keep a numeric tolerance, whereas a digest of a double vector is a bit-exactness test that fails across platforms, since the geodesic maths in `geodist` does not agree to the last bit between macOS/ARM and Linux/x86. Regenerate with `testthat::snapshot_accept()`.
+- The import and Parquet functions have no tests yet (see open tasks).
 
-## TODO
+## Open tasks
 
-- `strava_activities_to_parquet()` currently drops `attr(d, "activity_metadata")` on write, because `nanoparquet::write_parquet()` does not carry attributes. Add an attribute-preserving write/read wrapper and persist the metadata through the Parquet round-trip.
+- **Metadata through Parquet.** `strava_activities_to_parquet()` drops `attr(d, "activity_metadata")` on write, because `nanoparquet::write_parquet()` does not carry attributes. Add an attribute-preserving write/read wrapper and persist the metadata across the round-trip.
+- **Reports.** The reporting layer reading from `activities_parquet/` is not started.
+- **Robust `speed` / `pace`.** The order reserves `speed` ahead of `speed_ms` for a version derived the most reliable way available per file – preferring device-reported channels (`velocity_smooth`, `dev_dist`) and falling back to computed – so that it is present whenever it can be inferred at all. `addcols_speed()` currently always computes from `distance` and `time`.
+- **Tests for the pipeline.** Neither `strava_zip_to_repo()` nor `strava_activities_to_parquet()` has tests. Build a synthetic mini-export with `zip::zip()` from the `inst/extdata` fixtures rather than using a real export, which contains personal data. The invariant worth asserting is idempotence: run twice, and the second run extracts nothing, converts nothing, and makes no commit.
+- **One tree walk too many.** `strava_zip_to_repo()` calls `git_status()` before staging purely to count changes for the commit message. Running `git_add(".")` first and then `git_status(staged = TRUE)` would cut a full walk, which is minutes on a large import.
+- **`activities_html/`** is not in `strava_repo_ignore`; add it if HTML reports land inside the repository.
+
+## Open questions
+
+- **Empty streams.** A recordless FIT file reads as `0 x 0`, which has no Parquet schema, so `strava_activities_to_parquet()` substitutes a zero-row tibble with a single `timestamp` column in order to write something readable. The log records the original `0, 0` shape. Confirm this is the behaviour wanted, and check what `nanoparquet` actually does with a zero-column frame.
+- **Offsets in Parquet.** `lat_offset` / `lng_offset` are an inspection aid but are currently persisted, keeping the Parquet shape identical to the canonical stream. Alternative is to drop them on write and recompute on read.
+- **The conversion log.** `strava_activities_to_parquet()` returns a per-activity log and does not write it anywhere. Whether it should be persisted, and where, is unresolved.
+- **Deleted activities.** Activities deleted in Strava vanish from later exports but persist in the repository. Archive semantics argue for keeping them, but it is a silent divergence from Strava's state.
+- **`commit = FALSE`** leaves a dirty working tree, which blocks the next import until it is resolved. Intended, but it makes the flag deliberately unpleasant.
 
 ## Gotchas
 
 - Native pipe placeholder (`|> f(x = _)`) requires R >= 4.2 – that is the package's declared floor.
 - Dependencies: treat `DESCRIPTION` as authoritative; do not assume the list from memory. FITfileR needs its `Remotes` / `Additional_repositories` entries to install.
-- `R/hello.R` and `tests/testthat/test-hello.R` are leftover `usethis` stubs and should be removed together if still present.
+- gzip byte-stability holds **within** a machine, not across them: the OS byte is fixed at build time and the deflate stream can differ between zlib versions. Since the Parquet markers hash the compressed file, moving to another machine invalidates every marker at once and forces a full rebuild. Acceptable, but not free.
+- `tools::md5sum()` takes file paths, not strings. The hash branch in `summarize_stream()` only fires for character columns, of which stream tibbles currently have none; if one ever appears it will yield `NA` rather than a hash.
