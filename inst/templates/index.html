@@ -32,6 +32,11 @@ body {
   cursor: pointer; transition: background 0.08s;
 }
 .card:hover { background: #eaedf0; }
+.card.page { background: #eaeff4; border-left: 3px solid var(--selected-bg); }
+.card.page:hover { background: #dfe6ed; }
+.card.page.selected { background: var(--selected-bg); border-left-color: var(--selected-bg); }
+.pages { border-bottom: 2px solid #cfd6dd; }
+.pages:empty { border-bottom: none; }
 .card.nopage { opacity: 0.5; cursor: default; }
 .card.nopage:hover { background: transparent; }
 .card.selected { background: var(--selected-bg); color: var(--selected-text); }
@@ -59,9 +64,10 @@ body {
   <aside class="sidebar">
     <header class="sidebar-header">
       <h1>Activities</h1>
-      <div class="count">{{n_pages}} of {{count}} rendered &nbsp;·&nbsp; ↑ ↓ to navigate</div>
+      <div class="count">{{n_rendered}} of {{count}} rendered &nbsp;·&nbsp; ↑ ↓ to navigate</div>
     </header>
     <nav class="cards" id="cards" tabindex="0" role="listbox" aria-label="Activities">
+      <div class="pages">{{pages_html}}</div>
       {{cards_html}}
     </nav>
   </aside>
