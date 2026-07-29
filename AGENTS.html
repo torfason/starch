@@ -37,7 +37,7 @@
 <div class="section level2">
 <h2 id="project">Project<a class="anchor" aria-label="anchor" href="#project"></a></h2>
 <p><code>starch</code> is an R package for reading Strava bulk-export track files (GPX, TCX, FIT, including the gzip-compressed <code>.gz</code> files as shipped) into tidy, analysis-ready stream tibbles, and deriving per-point columns (elapsed time, cumulative distance, speed).</p>
-<p>Longer term it will grow a file → Parquet → reports pipeline.</p>
+<p>It also carries the pipeline that feeds those readers: importing a Strava export zip into a version-controlled repository, and converting the archived activities to Parquet. Reports reading from the Parquet layer are still to come.</p>
 <ul><li>Repo: <code>torfason/starch</code> on GitHub; default branch <code>main</code>.</li>
 <li>Docs site: pkgdown at <code>torfason.github.io/starch/</code>.</li>
 <li>License: MIT</li>
@@ -60,8 +60,24 @@
 <ul><li>
 <code>read_streams.R</code> – the reader family. <code>read_stream(path)</code> dispatches on the extension (after stripping <code>.gz</code>) to <code><a href="reference/read_stream.html">read_gpx_stream()</a></code>, <code><a href="reference/read_stream.html">read_tcx_stream()</a></code>, or <code><a href="reference/read_stream.html">read_fit_stream()</a></code>. Each reads the file <strong>once</strong> and returns a stream tibble (one row per track point) with columns drawn from <code>timestamp</code>, <code>lat</code>, <code>lng</code>, <code>altitude</code>, <code>heartrate</code>, <code>cadence</code>, <code>temp</code>, <code>dev_dist</code>, <code>velocity_smooth</code>, <code>watts</code>, <code>grade_smooth</code>. <code>drop_empty_cols()</code> removes any column that is entirely <code>NA</code>.</li>
 <li>
-<code>derive_columns.R</code> – the <code>addcols_*</code> transforms: <code><a href="reference/derive_columns.html">addcols_time()</a></code>, <code><a href="reference/derive_columns.html">addcols_distance()</a></code> (adds <code>distance</code>, plus <code>dist_diff</code> when device distance <code>dev_dist</code> is present), <code><a href="reference/derive_columns.html">addcols_speed()</a></code> (smoothed), <code><a href="reference/derive_columns.html">addcols_speed_naive()</a></code>. Pure tibble → tibble; documented as one family via <code>@describeIn</code>.</li>
+<code>derive_columns.R</code> – the <code>addcols_*</code> transforms: <code><a href="reference/derive_columns.html">addcols_time()</a></code>, <code><a href="reference/derive_columns.html">addcols_distance()</a></code> (adds <code>distance</code>, plus <code>dist_diff</code> when device distance <code>dev_dist</code> is present), <code><a href="reference/derive_columns.html">addcols_speed()</a></code> (smoothed), <code><a href="reference/derive_columns.html">addcols_speed_naive()</a></code>, <code><a href="reference/derive_columns.html">addcols_latlng_offset()</a></code> (coordinates relative to the first fix, since the absolute values dwarf the within-activity variation). Pure tibble → tibble; documented as one family via <code>@describeIn</code>. Also holds <code>activity_col_order</code> and <code><a href="reference/relocate_activity_cols.html">relocate_activity_cols()</a></code>.</li>
+<li>
+<code>strava_repo.R</code> – export import. <code><a href="reference/latest_strava_zip.html">latest_strava_zip()</a></code> picks the most recent archive from a directory; <code><a href="reference/strava_zip_to_repo.html">strava_zip_to_repo()</a></code> extracts it into a git repository, gzips the tracks that arrived uncompressed, and commits.</li>
+<li>
+<code>activities_parquet.R</code> – <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> converts archived activities to one Parquet file each, rebuilding only what changed. The internal <code>content_check()</code> implements the staleness test.</li>
 </ul><div class="section level3">
+<h3 id="pipeline-stages">Pipeline stages<a class="anchor" aria-label="anchor" href="#pipeline-stages"></a></h3>
+<pre><code>strava_zips/*.zip  --strava_zip_to_repo()--&gt;  strava_repo/
+strava_repo/activities/  --strava_activities_to_parquet()--&gt;  strava_repo/activities_parquet/</code></pre>
+<p>The repository holds the export verbatim under version control: every import extracts the whole archive and overwrites, because activities can be edited in Strava after the fact, so a file’s presence says nothing about whether its content is current. Git determines what actually changed. Generated artefacts (<code>activities_parquet/</code>, <code>activities_hashes/</code>) live inside the repository but are held out of it by the <code>.gitignore</code> written at init, from the <code>strava_repo_ignore</code> constant.</p>
+<p><code><a href="reference/strava_zip_to_repo.html">strava_zip_to_repo()</a></code> refuses to run unless the target is either empty or a git repository with a clean working tree. That guard is what makes unattended overwriting safe, and it also makes a failed import recoverable with <code>git reset --hard</code>.</p>
+</div>
+<div class="section level3">
+<h3 id="parquet-staleness">Parquet staleness<a class="anchor" aria-label="anchor" href="#parquet-staleness"></a></h3>
+<p>Because every import rewrites the whole archive, modification times say nothing about whether an activity changed. <code>content_check()</code> instead records each input’s md5 as an <strong>empty marker file</strong> in <code>activities_hashes/</code>, named for the hash and stamped with the time that content was first seen. An activity is rebuilt when its Parquet output is older than its marker – which happens only when the bytes genuinely differ. The plain mtime comparison is returned alongside as <code>semistale</code>, for comparison only.</p>
+<p>A conversion that fails leaves an old or absent output against a fresh marker, so it stays stale and is retried on the next run.</p>
+</div>
+<div class="section level3">
 <h3 id="per-activity-metadata">Per-activity metadata<a class="anchor" aria-label="anchor" href="#per-activity-metadata"></a></h3>
 <p>Each reader also extracts activity-level (not per-point) metadata in the same pass and attaches it as a single flat attribute, <code>attr(d, "activity_metadata")</code>, built by the internal <code>new_stream_meta()</code>. It is a flat named list with a fixed field set: <code>format</code>, <code>source</code>, <code>sport</code>, <code>sub_sport</code>, <code>title</code>, <code>start_time</code>, <code>n_sessions</code>, <code>total_distance</code>, <code>total_timer_time</code>, <code>total_calories</code>. Design rules:</p>
 <ul><li>Flat only – no nested values – so it converts to a one-row table via <code><a href="https://tibble.tidyverse.org/reference/as_tibble.html" class="external-link">tibble::as_tibble()</a></code>.</li>
@@ -88,6 +104,8 @@
 <strong>FIT is optional.</strong> <code>FITfileR</code> is a <code>Suggests</code> (installed from r-universe / GitHub, not CRAN). Guard its use with <code><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace()</a></code> in code and <code>skip_if_not_installed("FITfileR")</code> in tests.</li>
 <li>
 <strong>Prose style.</strong> Use en dashes (–), not em dashes (—), in comments and docs.</li>
+<li>
+<strong>Long-running functions report progress.</strong> Anything that moves thousands of files (<code><a href="reference/strava_zip_to_repo.html">strava_zip_to_repo()</a></code>, <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code>) reports each phase with <code>cli</code>, times the expensive steps with the internal <code>elapsed()</code> helper, and shows a progress bar over per-file loops. Every such function takes <code>quiet = FALSE</code>, and the reporting is guarded with <code>if (!quiet)</code> rather than suppressed wholesale.</li>
 </ul><div class="section level3">
 <h3 id="canonical-column-order">Canonical column order<a class="anchor" aria-label="anchor" href="#canonical-column-order"></a></h3>
 <p>Stream tibbles should present columns in this order (a column not listed is kept after the listed ones):</p>
@@ -96,8 +114,9 @@ lat, lng, altitude                 # position
 speed, speed_ms, speed_kmh, pace   # movement (robust; front-of-house)
 heartrate, cadence, watts, temp    # recorded sensors
 velocity_smooth, dev_dist, grade_smooth   # device-reported channels
-dist_diff                          # QA diagnostic</code></pre>
-<p>Ordering is enforced by relocating to this list, not by per-function <code>.after</code> placement.</p>
+dist_diff                          # QA diagnostic
+lat_offset, lng_offset             # recentred position</code></pre>
+<p><code><a href="reference/relocate_activity_cols.html">relocate_activity_cols()</a></code> is the single authority on ordering; the <code>.after</code> arguments still present in some <code>addcols_*</code> functions are vestigial and should not be relied on or extended.</p>
 </div>
 </div>
 <div class="section level2">
@@ -105,18 +124,44 @@ dist_diff                          # QA diagnostic</code></pre>
 <ul><li>Tests live in <code>tests/testthat/</code>. <code>helper-fixtures.R</code> provides fixture-path helpers (<code>fixture_activity()</code>, <code>fixture_workout()</code>, and the all-paths <code>fixture_activities()</code>, <code>fixture_workouts()</code>), the <code>meta_fields</code> vector, and the thorough-run helpers.</li>
 <li>The exhaustive loop over every fixture is gated by <code>skip_if_not_thorough()</code> and only runs under <code>test_thorough()</code>. Fast single-file tests always run.</li>
 <li>Activity tests live in <code>test-read_streams.R</code> and <code>test-derive_columns.R</code>; recordless workout behavior in <code>test-workouts.R</code>.</li>
+<li>Golden tests use <code>summarize_stream()</code> (in <code>helper-fixtures.R</code>) to reduce a stream to one row per column – name, NA count, mean, and a hash for character columns – and compare with <code>expect_snapshot_value(style = "json2")</code>, with snapshots under <code>_snaps/</code>. Comparing summaries rather than hashing whole columns is deliberate: <code>expect_equal()</code> semantics keep a numeric tolerance, whereas a digest of a double vector is a bit-exactness test that fails across platforms, since the geodesic maths in <code>geodist</code> does not agree to the last bit between macOS/ARM and Linux/x86. Regenerate with <code><a href="https://testthat.r-lib.org/reference/snapshot_accept.html" class="external-link">testthat::snapshot_accept()</a></code>.</li>
+<li>The import and Parquet functions have no tests yet (see open tasks).</li>
 </ul></div>
 <div class="section level2">
-<h2 id="todo">TODO<a class="anchor" aria-label="anchor" href="#todo"></a></h2>
+<h2 id="open-tasks">Open tasks<a class="anchor" aria-label="anchor" href="#open-tasks"></a></h2>
 <ul><li>
-<code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> currently drops <code>attr(d, "activity_metadata")</code> on write, because <code><a href="https://nanoparquet.r-lib.org/reference/write_parquet.html" class="external-link">nanoparquet::write_parquet()</a></code> does not carry attributes. Add an attribute-preserving write/read wrapper and persist the metadata through the Parquet round-trip.</li>
+<strong>Metadata through Parquet.</strong> <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> drops <code>attr(d, "activity_metadata")</code> on write, because <code><a href="https://nanoparquet.r-lib.org/reference/write_parquet.html" class="external-link">nanoparquet::write_parquet()</a></code> does not carry attributes. Add an attribute-preserving write/read wrapper and persist the metadata across the round-trip.</li>
+<li>
+<strong>Reports.</strong> The reporting layer reading from <code>activities_parquet/</code> is not started.</li>
+<li>
+<strong>Robust <code>speed</code> / <code>pace</code>.</strong> The order reserves <code>speed</code> ahead of <code>speed_ms</code> for a version derived the most reliable way available per file – preferring device-reported channels (<code>velocity_smooth</code>, <code>dev_dist</code>) and falling back to computed – so that it is present whenever it can be inferred at all. <code><a href="reference/derive_columns.html">addcols_speed()</a></code> currently always computes from <code>distance</code> and <code>time</code>.</li>
+<li>
+<strong>Tests for the pipeline.</strong> Neither <code><a href="reference/strava_zip_to_repo.html">strava_zip_to_repo()</a></code> nor <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> has tests. Build a synthetic mini-export with <code><a href="https://r-lib.github.io/zip/reference/zip.html" class="external-link">zip::zip()</a></code> from the <code>inst/extdata</code> fixtures rather than using a real export, which contains personal data. The invariant worth asserting is idempotence: run twice, and the second run extracts nothing, converts nothing, and makes no commit.</li>
+<li>
+<strong>One tree walk too many.</strong> <code><a href="reference/strava_zip_to_repo.html">strava_zip_to_repo()</a></code> calls <code>git_status()</code> before staging purely to count changes for the commit message. Running <code>git_add(".")</code> first and then <code>git_status(staged = TRUE)</code> would cut a full walk, which is minutes on a large import.</li>
+<li>
+<strong><code>activities_html/</code></strong> is not in <code>strava_repo_ignore</code>; add it if HTML reports land inside the repository.</li>
+</ul></div>
+<div class="section level2">
+<h2 id="open-questions">Open questions<a class="anchor" aria-label="anchor" href="#open-questions"></a></h2>
+<ul><li>
+<strong>Empty streams.</strong> A recordless FIT file reads as <code>0 x 0</code>, which has no Parquet schema, so <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> substitutes a zero-row tibble with a single <code>timestamp</code> column in order to write something readable. The log records the original <code>0, 0</code> shape. Confirm this is the behaviour wanted, and check what <code>nanoparquet</code> actually does with a zero-column frame.</li>
+<li>
+<strong>Offsets in Parquet.</strong> <code>lat_offset</code> / <code>lng_offset</code> are an inspection aid but are currently persisted, keeping the Parquet shape identical to the canonical stream. Alternative is to drop them on write and recompute on read.</li>
+<li>
+<strong>The conversion log.</strong> <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> returns a per-activity log and does not write it anywhere. Whether it should be persisted, and where, is unresolved.</li>
+<li>
+<strong>Deleted activities.</strong> Activities deleted in Strava vanish from later exports but persist in the repository. Archive semantics argue for keeping them, but it is a silent divergence from Strava’s state.</li>
+<li>
+<strong><code>commit = FALSE</code></strong> leaves a dirty working tree, which blocks the next import until it is resolved. Intended, but it makes the flag deliberately unpleasant.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="gotchas">Gotchas<a class="anchor" aria-label="anchor" href="#gotchas"></a></h2>
 <ul><li>Native pipe placeholder (<code>|&gt; f(x = _)</code>) requires R &gt;= 4.2 – that is the package’s declared floor.</li>
 <li>Dependencies: treat <code>DESCRIPTION</code> as authoritative; do not assume the list from memory. FITfileR needs its <code>Remotes</code> / <code>Additional_repositories</code> entries to install.</li>
+<li>gzip byte-stability holds <strong>within</strong> a machine, not across them: the OS byte is fixed at build time and the deflate stream can differ between zlib versions. Since the Parquet markers hash the compressed file, moving to another machine invalidates every marker at once and forces a full rebuild. Acceptable, but not free.</li>
 <li>
-<code>R/hello.R</code> and <code>tests/testthat/test-hello.R</code> are leftover <code>usethis</code> stubs and should be removed together if still present.</li>
+<code><a href="https://rdrr.io/r/tools/md5sum.html" class="external-link">tools::md5sum()</a></code> takes file paths, not strings. The hash branch in <code>summarize_stream()</code> only fires for character columns, of which stream tibbles currently have none; if one ever appears it will yield <code>NA</code> rather than a hash.</li>
 </ul></div>
 </div>
 
