@@ -1,0 +1,224 @@
+---
+title: "Activity Overview"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    theme:
+      version: 4
+      bootswatch: flatly
+params:
+  activity_id: ""
+  activity_name: ""
+  activity_type: ""
+  parquet_path: ""
+  smooth_window: 5
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(dplyr)
+library(ggplot2)
+library(nanoparquet)
+library(leaflet)
+library(plotly)
+library(slider)
+
+d <- nanoparquet::read_parquet(params$parquet_path)
+
+# Not every activity carries every column. addcols_distance() and
+# addcols_speed() are only applied when the stream has coordinates, so an
+# indoor activity legitimately arrives with no distance, speed or pace at all,
+# and a recordless file arrives with no rows. Everything below is guarded.
+hascol <- function(nm) nm %in% names(d) && any(!is.na(d[[nm]]))
+has_rows  <- nrow(d) > 0
+has_time  <- has_rows && hascol("time")
+has_dist  <- has_rows && hascol("distance")
+has_speed <- has_rows && hascol("speed")
+has_pace  <- has_rows && hascol("pace")
+has_hr    <- has_rows && hascol("heartrate")
+has_alt   <- has_rows && hascol("altitude")
+has_gps   <- has_rows && hascol("lat") && hascol("lng")
+
+fmt_pace <- function(min_per_km) {
+  if (!is.finite(min_per_km)) return("\u2014")
+  mins <- floor(min_per_km)
+  secs <- round((min_per_km - mins) * 60)
+  if (secs == 60L) { mins <- mins + 1L; secs <- 0L }
+  sprintf("%d:%02d", mins, secs)
+}
+
+fmt_duration <- function(s) {
+  if (!is.finite(s)) return("\u2014")
+  h <- floor(s / 3600); m <- floor((s %% 3600) / 60); ss <- round(s %% 60)
+  if (h > 0) sprintf("%d:%02d:%02d", h, m, ss) else sprintf("%d:%02d", m, ss)
+}
+
+smooth_centered <- function(x, w) {
+  slider::slide_dbl(x, mean, na.rm = TRUE, .before = w, .after = w)
+}
+
+total_dist_km <- if (has_dist) max(d$distance, na.rm = TRUE) / 1000 else NA_real_
+total_time_s  <- if (has_time) max(d$time, na.rm = TRUE) else NA_real_
+avg_pace_mpk  <- if (isTRUE(total_dist_km > 0) && is.finite(total_time_s)) {
+  (total_time_s / 60) / total_dist_km
+} else NA_real_
+avg_hr      <- if (has_hr)  mean(d$heartrate, na.rm = TRUE) else NA_real_
+elev_gain_m <- if (has_alt) sum(pmax(0, diff(d$altitude)), na.rm = TRUE) else NA_real_
+
+# Plot against distance where it exists, and fall back to elapsed time so that
+# indoor activities still get their series charted. The replacement has to
+# match nrow(d): a recordless stream is a legitimate 0-row frame, and assigning
+# a scalar into one is an error rather than a recycle.
+d$xvar <- if (has_dist) {
+  d$distance / 1000
+} else if (has_time) {
+  d$time / 60
+} else {
+  rep(NA_real_, nrow(d))
+}
+xlab <- if (has_dist) "Distance (km)" else if (has_time) "Time (min)" else ""
+
+if (has_pace && has_speed) {
+  # Dead-band the stationary stretches, where pace explodes towards infinity.
+  d$pace_sm <- smooth_centered(
+    if_else(d$speed < 0.3, NA_real_, d$pace), params$smooth_window
+  )
+}
+if (has_hr) d$hr_sm <- smooth_centered(d$heartrate, params$smooth_window)
+
+date_str <- if (has_rows && hascol("timestamp")) {
+  format(min(d$timestamp, na.rm = TRUE), "%Y-%m-%d %H:%M")
+} else ""
+
+# Activity names are user-supplied and are interpolated into a double-quoted
+# YAML scalar, so a name containing a quote or backslash would otherwise break
+# pandoc's parse of the title block.
+yaml_escape <- function(x) {
+  x <- gsub("\\", "\\\\", x, fixed = TRUE)
+  gsub('"', '\\"', x, fixed = TRUE)
+}
+nz <- function(x) if (is.null(x) || is.na(x) || !nzchar(x)) NULL else x
+
+title_main <- nz(params$activity_name)
+if (is.null(title_main)) title_main <- params$activity_id
+heading <- paste(
+  c(title_main, nz(params$activity_type), nz(date_str)),
+  collapse = " \u00b7 "
+) |>
+  yaml_escape()
+```
+
+---
+title: "`r heading`"
+---
+
+Row {data-height=120}
+-----------------------------------------------------------------------
+
+### Distance
+```{r}
+valueBox(
+  if (is.finite(total_dist_km)) sprintf("%.2f km", total_dist_km) else "\u2014",
+  icon = "fa-route"
+)
+```
+
+### Duration
+```{r}
+valueBox(fmt_duration(total_time_s), icon = "fa-clock")
+```
+
+### Avg pace
+```{r}
+valueBox(
+  if (is.finite(avg_pace_mpk)) paste0(fmt_pace(avg_pace_mpk), " /km") else "\u2014",
+  icon = "fa-person-running"
+)
+```
+
+### Avg HR
+```{r}
+valueBox(
+  if (has_hr) sprintf("%.0f bpm", avg_hr) else "\u2014",
+  icon = "fa-heart",
+  # flexdashboard accepts its five Bootstrap names (primary, info, success,
+  # warning, danger) or a literal CSS colour. Anything else - "secondary"
+  # included - is handed to htmltools::parseCssColors(), which rejects it.
+  color = if (has_hr) "primary" else "#95a5a6"
+)
+```
+
+### Elev gain
+```{r}
+valueBox(
+  if (has_alt) sprintf("%.0f m", elev_gain_m) else "\u2014",
+  icon = "fa-mountain"
+)
+```
+
+Row {data-height=500}
+-----------------------------------------------------------------------
+
+### Route
+
+```{r}
+if (has_gps) {
+  coords <- d |>
+    filter(!is.na(lat), !is.na(lng)) |>
+    select(lng, lat) |>
+    as.matrix()
+  leaflet(coords) |>
+    addProviderTiles(providers$CartoDB.Positron) |>
+    addPolylines(color = "#2c3e50", weight = 4, opacity = 0.85)
+} else {
+  "No GPS data."
+}
+```
+
+### Elevation profile
+
+```{r}
+if (has_alt && nzchar(xlab)) {
+  p <- ggplot(d, aes(xvar, altitude)) +
+    geom_area(fill = "#95a5a6", alpha = 0.4) +
+    geom_line(color = "#34495e") +
+    labs(x = xlab, y = "Altitude (m)") +
+    theme_minimal()
+  ggplotly(p, tooltip = c("x", "y"))
+} else {
+  "No altitude data."
+}
+```
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Pace
+
+```{r}
+if (has_pace && has_speed && nzchar(xlab)) {
+  p <- ggplot(d, aes(xvar, pace_sm)) +
+    geom_line(color = "#2980b9", alpha = 0.85) +
+    scale_y_reverse() +
+    labs(x = xlab, y = "Pace (min/km)") +
+    theme_minimal()
+  ggplotly(p, tooltip = c("x", "y"))
+} else {
+  "No pace data."
+}
+```
+
+### Heart rate
+
+```{r}
+if (has_hr && nzchar(xlab)) {
+  p <- ggplot(d, aes(xvar, hr_sm)) +
+    geom_line(color = "#c0392b", alpha = 0.85) +
+    labs(x = xlab, y = "Heart rate (bpm)") +
+    theme_minimal()
+  ggplotly(p, tooltip = c("x", "y"))
+} else {
+  "No heart rate data."
+}
+```

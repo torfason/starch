@@ -15,6 +15,14 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 8.0.0
 Suggests: 
     FITfileR (>= 0.1.11),
+    flexdashboard,
+    ggplot2,
+    glue,
+    htmltools,
+    leaflet,
+    plotly,
+    readr,
+    rmarkdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 URL: https://github.com/torfason/starch, https://torfason.github.io/starch/
@@ -32,6 +40,7 @@ Imports:
     slider,
     tibble,
     tools,
+    utils,
     withr,
     xml2,
     zip
