@@ -29,6 +29,8 @@
   : Render the dashboard index
 - [`render_overview_table()`](https://torfason.github.io/starch/reference/render_overview_table.md)
   : Render the overview table page
+- [`render_trends()`](https://torfason.github.io/starch/reference/render_trends.md)
+  : Render the trends page
 - [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
   : Convert repository activities to Parquet
 - [`strava_zip_to_repo()`](https://torfason.github.io/starch/reference/strava_zip_to_repo.md)
