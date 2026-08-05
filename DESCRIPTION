@@ -40,8 +40,6 @@ Imports:
     R.utils,
     slider,
     tibble,
-    tools,
-    utils,
     withr,
     xml2,
     zip

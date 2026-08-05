@@ -133,18 +133,107 @@ addcols_latlng_offset <- function(d) {
     )
 }
 
-# Canonical column order for stream tibbles. relocate_activity_cols() moves
-# whichever of these are present to the front, in this order; any column not
-# listed is kept, in its existing relative order, after the listed ones.
-activity_col_order <- c(
-  "timestamp", "time", "distance",                  # axes
-  "lat", "lng", "altitude",                         # position
-  "speed", "speed_ms", "speed_kmh", "pace",         # movement (robust)
-  "heartrate", "cadence", "watts", "temp",          # recorded sensors
-  "velocity_smooth", "dev_dist", "grade_smooth",    # device-reported
-  "dist_diff",                                      # QA diagnostic
-  "lat_offset", "lng_offset"                        # recentred position
-)
+
+#' Add rolling split columns
+#'
+#' Adds one column per window in `distance`, each holding a rolling measure
+#' over the preceding window: either the pace across it, or the time taken to
+#' cover it. Every value looks strictly backwards, so `min(pace_10k)` over an
+#' activity is the fastest 10 km run within it.
+#'
+#' The point exactly one window back almost never coincides with a recorded
+#' sample, so the time at that distance is interpolated rather than snapped to
+#' the nearest row. Values are `NA` over the opening stretch, where the window
+#' would reach back beyond the start of the track.
+#'
+#' @section Column names and units:
+#' Names are the type, the window, and the unit suffix: `pace_1k`, `time_5k`,
+#' `pace_400m`, `pace_5mi`. Fractional windows replace the decimal point with
+#' an underscore, so 21.1 km becomes `pace_21_1k`, which needs no backticks.
+#'
+#' `type = "pace"` is reported per kilometre for `"km"` and `"m"`, and per mile
+#' for `"miles"`, so a 400 m split reads as min/km rather than the useless
+#' min/metre. This matches the units of the `pace` column from
+#' [addcols_speed()], so the two can share an axis. `type = "time"` is in
+#' seconds, matching the `time` column.
+#'
+#' Windows longer than the activity produce nothing, and those columns are
+#' dropped rather than carried as all-`NA`. Columns are appended in the order
+#' given; use [relocate_activity_cols()] if a canonical order is wanted.
+#'
+#' @param d A stream tibble carrying `distance` and `time`. If either is
+#'   absent, or there are too few distinct distances to interpolate between,
+#'   `d` is returned unchanged.
+#' @param distance Window sizes, in `units`.
+#' @param units Unit the windows are expressed in.
+#' @param type Whether each column holds the pace across its window or the time
+#'   taken to cover it.
+#'
+#' @return `d` with one column appended per window that yielded any data.
+#' @export
+addcols_splits <- function(d,
+                           distance = c(1, 5, 10),
+                           units = c("km", "m", "miles"),
+                           type = c("pace", "time")) {
+
+  # Metres per unit, and the suffix each contributes to generated column names.
+  split_unit_m <- c(km = 1000, m = 1, miles = 1609.344)
+  split_unit_suffix <- c(km = "k", m = "m", miles = "mi")
+
+  # Verify inputs
+  units <- match.arg(units)
+  type <- match.arg(type)
+  stopifnot(is.numeric(distance), length(distance) > 0L, all(distance > 0))
+
+  window_m <- distance * split_unit_m[[units]]
+  pace_unit_m <- if (units == "miles") {
+    split_unit_m[["miles"]]
+  } else {
+    split_unit_m[["km"]]
+  }
+
+  # as.character() rather than format(), which pads a vector to a common width
+  # and would render 1 as "1.0" whenever 21.1 appears alongside it.
+  labels <- sub("[.]", "_", as.character(distance))
+  nms <- paste0(type, "_", labels, split_unit_suffix[[units]])
+  if (!identical(nms, make.names(nms))) {
+    stop(
+      "Window sizes produce non-syntactic column names: ",
+      paste(nms[nms != make.names(nms)], collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  if (!all(c("distance", "time") %in% names(d))) return(d)
+  ok <- !is.na(d$distance) & !is.na(d$time)
+  # Interpolation needs two distinct distances; a stream whose distance never
+  # advances has none.
+  if (sum(ok) < 2L || length(unique(d$distance[ok])) < 2L) return(d)
+
+  for (i in seq_along(window_m)) {
+    # rule = 1 returns NA where the window reaches back beyond the start of the
+    # track, which is what leaves the opening stretch empty. ties = min
+    # resolves stationary spells to the first time a distance was reached,
+    # which is how a split is conventionally read, and specifying it also
+    # suppresses the tie-collapsing warning on any activity with a pause.
+    t_back <- stats::approx(
+      x = d$distance[ok],
+      y = d$time[ok],
+      xout = d$distance - window_m[[i]],
+      rule = 1,
+      ties = min
+    )$y
+    dt <- d$time - t_back
+    v <- if (type == "pace") {
+      (dt / 60) / (window_m[[i]] / pace_unit_m)
+    } else {
+      dt
+    }
+    if (!all(is.na(v))) d[[nms[[i]]]] <- v
+  }
+  d
+}
+
 
 #' Reorder stream columns into the canonical activity layout
 #'
@@ -159,5 +248,20 @@ activity_col_order <- c(
 #' @return `d` with columns relocated; contents and row order unchanged.
 #' @export
 relocate_activity_cols <- function(d) {
+
+  # Canonical column order for stream tibbles. relocate_activity_cols() moves
+  # whichever of these are present to the front, in this order; any column not
+  # listed is kept, in its existing relative order, after the listed ones.
+  activity_col_order <- c(
+    "timestamp", "time", "distance",                  # axes
+    "lat", "lng", "altitude",                         # position
+    "speed", "speed_ms", "speed_kmh", "pace",         # movement (robust)
+    "heartrate", "cadence", "watts", "temp",          # recorded sensors
+    "velocity_smooth", "dev_dist", "grade_smooth",    # device-reported
+    "dist_diff",                                      # QA diagnostic
+    "lat_offset", "lng_offset"                        # recentred position
+  )
+
+  # Relocate to activity_col_order using dplyr::relocate()
   dplyr::relocate(d, dplyr::any_of(activity_col_order))
 }
