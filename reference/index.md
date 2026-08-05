@@ -2,6 +2,8 @@
 
 ## All functions
 
+- [`addcols_splits()`](https://torfason.github.io/starch/reference/addcols_splits.md)
+  : Add rolling split columns
 - [`addcols_time()`](https://torfason.github.io/starch/reference/derive_columns.md)
   [`addcols_distance()`](https://torfason.github.io/starch/reference/derive_columns.md)
   [`addcols_speed()`](https://torfason.github.io/starch/reference/derive_columns.md)
