@@ -375,6 +375,70 @@ render_overview_table <- function(repo = here("strava_repo"), quiet = FALSE) {
   invisible(out)
 }
 
+#' Render the trends page
+#'
+#' Writes `dashboard/trends.html`, an interactive view of totals over time.
+#' Distance, activity count, elapsed time or moving time are bucketed by week
+#' or month over a period measured back from the newest activity, for any
+#' selection of sports. It is built entirely from `activities.csv`, so it is
+#' complete across the whole history even while most activities lack a detail
+#' page. The controls re-aggregate client-side; there is no server component.
+#'
+#' @param repo Path to the Strava repository.
+#' @param quiet Suppress progress reporting.
+#'
+#' @return Path to the written page, invisibly.
+#' @export
+render_trends <- function(repo = here("strava_repo"), quiet = FALSE) {
+  require_pkgs(c("readr", "rmarkdown", "plotly", "jsonlite"))
+
+  template <- system.file("templates", "trends.Rmd", package = "starch")
+  if (!nzchar(template)) {
+    stop("Could not locate trends.Rmd in the installed package.",
+      call. = FALSE
+    )
+  }
+  out <- fs::path(repo, "dashboard", "trends.html")
+
+  t0 <- Sys.time()
+  acts <- load_activities_csv(repo)
+
+  # The page needs only date, sport and the four metric channels; all
+  # aggregation happens in the browser. Dates are formatted in UTC to match the
+  # parsing in load_activities_csv() and keep client-side bucketing deterministic.
+  trends <- tibble::tibble(
+    date = format(acts$activity_date, "%Y-%m-%d", tz = "UTC"),
+    type = acts$activity_type,
+    distance_km = acts$distance_km,
+    elapsed_s = acts$elapsed_time_s,
+    moving_s = acts$moving_time_s
+  )
+  # An activity with no date or no type cannot be placed or grouped.
+  keep <- !is.na(trends$date) & !is.na(trends$type)
+  trends <- trends[keep, , drop = FALSE]
+
+  data_file <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(trends, data_file)
+  int_dir <- withr::local_tempdir()
+
+  fs::dir_create(fs::path_dir(out))
+  rmarkdown::render(
+    input = template,
+    params = list(data_path = data_file),
+    output_file = as.character(fs::path_abs(out)),
+    intermediates_dir = int_dir,
+    knit_root_dir = int_dir,
+    quiet = TRUE,
+    envir = new.env()
+  )
+  if (!quiet) {
+    cli::cli_alert_success(
+      "Trends page written: {nrow(trends)} activit{?y/ies} ({elapsed(t0)})"
+    )
+  }
+  invisible(out)
+}
+
 #' Render the dashboard index
 #'
 #' Writes `dashboard/index.html`, a sidebar of every activity in the manifest
@@ -420,6 +484,11 @@ render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
   # Standalone pages, shown as cards above the activity list. Listed here so
   # that adding one is a single entry plus its renderer.
   page_specs <- list(
+    list(
+      file = "trends.html",
+      title = "Trends",
+      subtitle = "Totals over time"
+    ),
     list(
       file = "overview_table.html",
       title = "All activities",
@@ -483,6 +552,7 @@ render_dashboard <- function(repo = here("strava_repo"),
   }
   render_activities(repo = repo, max_files = max_files, quiet = quiet)
   render_overview_table(repo = repo, quiet = quiet)
+  render_trends(repo = repo, quiet = quiet)
   out <- render_index(repo = repo, quiet = quiet)
   if (!quiet) cli::cli_alert_success("Done ({elapsed(t_all)})")
   invisible(out)

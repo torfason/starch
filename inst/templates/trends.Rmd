@@ -1,0 +1,297 @@
+---
+title: "Trends"
+output:
+  html_document:
+    theme: flatly
+    self_contained: true
+params:
+  data_path: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(plotly)
+library(jsonlite)
+
+d <- readRDS(params$data_path)
+
+# Everything the page needs travels as one small JSON array (one object per
+# activity). All windowing, bucketing and per-sport aggregation happens
+# client-side in the script below, so the controls re-aggregate instantly with
+# no server and no re-render. Keeping it here (rather than pre-computing every
+# control combination in R) is what makes an arbitrary multi-select of sports
+# cheap: the JS sums the raw rows on demand.
+payload <- jsonlite::toJSON(
+  d, dataframe = "rows", na = "null", auto_unbox = TRUE
+)
+```
+
+<style>
+#trends-controls { margin: 0 0 1rem 0; display: flex; flex-wrap: wrap;
+  gap: 1.25rem; align-items: flex-end; }
+#trends-controls .grp { display: flex; flex-direction: column; gap: 0.2rem; }
+#trends-controls label.hdr { font-size: 0.75rem; text-transform: uppercase;
+  letter-spacing: 0.03em; color: #666; }
+#trends-controls select { padding: 0.25rem 0.4rem; }
+#trends-sports { display: flex; flex-wrap: wrap; gap: 0.1rem 0.9rem;
+  max-width: 640px; }
+#trends-sports label.trends-chk { font-weight: normal; margin: 0;
+  white-space: nowrap; }
+#trends-sport-btns { display: flex; gap: 0.4rem; }
+#trends-sport-btns button { font-size: 0.75rem; padding: 0.1rem 0.5rem; }
+#trends-chart { width: 100%; height: 520px; }
+</style>
+
+<div id="trends-controls">
+  <div class="grp">
+    <label class="hdr" for="trends-metric">Metric</label>
+    <select id="trends-metric">
+      <option value="distance" selected>Distance (km)</option>
+      <option value="count">Activity count</option>
+      <option value="elapsed">Elapsed time (h)</option>
+      <option value="moving">Moving time (h)</option>
+    </select>
+  </div>
+  <div class="grp">
+    <label class="hdr" for="trends-bucket">Bucket</label>
+    <select id="trends-bucket">
+      <option value="week">Week</option>
+      <option value="month" selected>Month</option>
+    </select>
+  </div>
+  <div class="grp">
+    <label class="hdr" for="trends-period">Period (from newest)</label>
+    <select id="trends-period">
+      <option value="1m">1 month</option>
+      <option value="1y" selected>1 year</option>
+      <option value="3y">3 years</option>
+      <option value="5y">5 years</option>
+      <option value="10y">10 years</option>
+      <option value="all">All time</option>
+    </select>
+  </div>
+  <div class="grp">
+    <label class="hdr">Sports</label>
+    <div id="trends-sport-btns">
+      <button type="button" id="trends-all">All</button>
+      <button type="button" id="trends-none">None</button>
+    </div>
+    <div id="trends-sports"></div>
+  </div>
+</div>
+
+```{r chart, echo=FALSE}
+# An empty widget solely to bundle plotly.js into this self-contained page and
+# provide a graph div with a known id. The script below fills it via
+# Plotly.react; the empty plot is never shown.
+p <- plotly::plot_ly()
+p$elementId <- "trends-chart"
+p
+```
+
+```{r payload, results="asis"}
+cat(sprintf("<script>window.STARCH_TRENDS = %s;</script>", payload))
+```
+
+<script>
+(function () {
+  var DATA = window.STARCH_TRENDS || [];
+  var METRIC_LABEL = {
+    count: "Activities",
+    distance: "Distance (km)",
+    elapsed: "Elapsed time (h)",
+    moving: "Moving time (h)"
+  };
+
+  // ---- aggregation core (unit-tested separately) --------------------------
+
+  function parseUTC(s) {
+    var p = s.split("-");
+    return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  }
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function ymd(dt) {
+    return dt.getUTCFullYear() + "-" + pad2(dt.getUTCMonth() + 1) + "-" +
+      pad2(dt.getUTCDate());
+  }
+  // Monday of the activity's week (Monday-start), in UTC.
+  function weekStart(dt) {
+    var d = new Date(dt.getTime());
+    var day = d.getUTCDay();          // 0=Sun..6=Sat
+    var iso = (day === 0) ? 7 : day;  // 1=Mon..7=Sun
+    d.setUTCDate(d.getUTCDate() - (iso - 1));
+    return d;
+  }
+  function monthStart(dt) {
+    return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), 1));
+  }
+  function bucketStart(dt, bucket) {
+    return bucket === "week" ? weekStart(dt) : monthStart(dt);
+  }
+  function bucketNext(dt, bucket) {
+    var d = new Date(dt.getTime());
+    if (bucket === "week") { d.setUTCDate(d.getUTCDate() + 7); }
+    else { d.setUTCMonth(d.getUTCMonth() + 1); }
+    return d;
+  }
+  // Window lower bound: anchor (newest activity) shifted back.
+  function windowStart(anchor, period, minDate) {
+    var y = anchor.getUTCFullYear(), m = anchor.getUTCMonth(),
+      dd = anchor.getUTCDate();
+    switch (period) {
+      case "1m": return new Date(Date.UTC(y, m - 1, dd));
+      case "1y": return new Date(Date.UTC(y - 1, m, dd));
+      case "3y": return new Date(Date.UTC(y - 3, m, dd));
+      case "5y": return new Date(Date.UTC(y - 5, m, dd));
+      case "10y": return new Date(Date.UTC(y - 10, m, dd));
+      default: return minDate; // "all"
+    }
+  }
+  function metricValue(row, metric) {
+    if (metric === "count") return 1;
+    var v = metric === "distance" ? row.distance_km
+      : metric === "elapsed" ? row.elapsed_s
+        : row.moving_s;
+    if (v === null || v === undefined || isNaN(v)) return 0;
+    return (metric === "distance") ? v : v / 3600; // seconds -> hours
+  }
+  // Sports present, ordered by descending all-history activity count.
+  function sportOrder(rows) {
+    var counts = {};
+    rows.forEach(function (r) { counts[r.type] = (counts[r.type] || 0) + 1; });
+    return Object.keys(counts).sort(function (a, b) {
+      return counts[b] - counts[a] || (a < b ? -1 : a > b ? 1 : 0);
+    });
+  }
+  function aggregate(rows, opts) {
+    var bucket = opts.bucket, metric = opts.metric,
+      sports = opts.sports, period = opts.period;
+
+    var parsed = rows.map(function (r) {
+      return { d: parseUTC(r.date), type: r.type, row: r };
+    });
+    if (parsed.length === 0) return { buckets: [], series: {} };
+
+    var anchor = parsed.reduce(function (mx, p) { return p.d > mx ? p.d : mx; },
+      parsed[0].d);
+    var minAll = parsed.reduce(function (mn, p) { return p.d < mn ? p.d : mn; },
+      parsed[0].d);
+
+    var cutoff = windowStart(anchor, period, minAll);
+    var sel = {};
+    sports.forEach(function (s) { sel[s] = true; });
+
+    var filtered = parsed.filter(function (p) {
+      return p.d >= cutoff && sel[p.type];
+    });
+    if (filtered.length === 0) return { buckets: [], series: {} };
+
+    var lo = filtered.reduce(function (mn, p) { return p.d < mn ? p.d : mn; },
+      filtered[0].d);
+    var hi = filtered.reduce(function (mx, p) { return p.d > mx ? p.d : mx; },
+      filtered[0].d);
+
+    // Contiguous bucket sequence from first to last in-window activity, so
+    // inactive weeks/months appear as gaps rather than being skipped.
+    var seq = [];
+    var cur = bucketStart(lo, bucket), end = bucketStart(hi, bucket);
+    while (cur <= end) { seq.push(ymd(cur)); cur = bucketNext(cur, bucket); }
+    var idx = {};
+    seq.forEach(function (k, i) { idx[k] = i; });
+
+    var series = {};
+    sports.forEach(function (s) {
+      if (sel[s]) series[s] = seq.map(function () { return 0; });
+    });
+    filtered.forEach(function (p) {
+      var key = ymd(bucketStart(p.d, bucket));
+      series[p.type][idx[key]] += metricValue(p.row, metric);
+    });
+    return { buckets: seq, series: series };
+  }
+
+  // ---- controls + rendering -----------------------------------------------
+
+  function el(id) { return document.getElementById(id); }
+  var ORDER = [];   // full sport order, count descending
+  var GD = null;    // graph div, resolved once
+
+  function chartDiv() {
+    return GD || el("trends-chart") ||
+      document.querySelector(".plotly.html-widget");
+  }
+  function selectedSports() {
+    var out = [];
+    document.querySelectorAll("#trends-sports input[type=checkbox]")
+      .forEach(function (b) { if (b.checked) out.push(b.value); });
+    return out;
+  }
+  function buildSportControls(order) {
+    var host = el("trends-sports");
+    host.innerHTML = "";
+    order.forEach(function (s) {
+      var lab = document.createElement("label");
+      lab.className = "trends-chk";
+      var box = document.createElement("input");
+      box.type = "checkbox"; box.value = s; box.checked = true;
+      box.addEventListener("change", render);
+      lab.appendChild(box);
+      lab.appendChild(document.createTextNode(" " + s));
+      host.appendChild(lab);
+    });
+  }
+  function setAll(v) {
+    document.querySelectorAll("#trends-sports input[type=checkbox]")
+      .forEach(function (b) { b.checked = v; });
+    render();
+  }
+  function render() {
+    var metric = el("trends-metric").value;
+    var agg = aggregate(DATA, {
+      bucket: el("trends-bucket").value,
+      period: el("trends-period").value,
+      metric: metric,
+      sports: selectedSports()
+    });
+    // Traces follow the fixed count-descending order, so a sport keeps its
+    // colour and stacking position as the selection changes.
+    var traces = ORDER.filter(function (s) { return agg.series[s]; })
+      .map(function (s) {
+        return { type: "bar", name: s, x: agg.buckets, y: agg.series[s] };
+      });
+    var layout = {
+      barmode: "stack",
+      height: 520,
+      autosize: true,
+      margin: { l: 60, r: 20, t: 20, b: 40 },
+      bargap: 0.05,
+      xaxis: { type: "date" },
+      yaxis: { title: { text: METRIC_LABEL[metric] }, rangemode: "tozero" },
+      legend: { orientation: "h" }
+    };
+    var gd = chartDiv();
+    if (gd && typeof Plotly !== "undefined") {
+      GD = gd;
+      Plotly.react(gd, traces, layout, { responsive: true, displaylogo: false });
+    }
+  }
+  function init() {
+    ORDER = sportOrder(DATA);
+    buildSportControls(ORDER);
+    ["trends-metric", "trends-bucket", "trends-period"].forEach(function (id) {
+      el(id).addEventListener("change", render);
+    });
+    el("trends-all").addEventListener("click", function () { setAll(true); });
+    el("trends-none").addEventListener("click", function () { setAll(false); });
+    render();
+  }
+  // Defer past htmlwidgets' own on-load init (which draws the empty plot) and
+  // wait for plotly.js to be present, so our first react is the one that wins.
+  function boot() {
+    if (typeof Plotly === "undefined") { return setTimeout(boot, 30); }
+    init();
+  }
+  if (document.readyState === "complete") { setTimeout(boot, 0); }
+  else { window.addEventListener("load", function () { setTimeout(boot, 0); }); }
+})();
+</script>

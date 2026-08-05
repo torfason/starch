@@ -19,6 +19,7 @@ Suggests:
     ggplot2,
     glue,
     htmltools,
+    jsonlite,
     leaflet,
     plotly,
     readr,
