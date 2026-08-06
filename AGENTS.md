@@ -75,6 +75,24 @@ Source lives in `R/`:
   converts archived activities to one Parquet file each, rebuilding only
   what changed. The internal `content_check()` implements the staleness
   test.
+- `dashboard_common.R` – shared by every dashboard stack, and belonging
+  to none of them.
+  [`load_activities_csv()`](https://torfason.github.io/starch/reference/load_activities_csv.md)
+  reads the export manifest, `parquet_stream_stats()` reads per-activity
+  statistics out of the Parquet footers, and `require_pkgs()` checks the
+  render-time Suggests. Nothing here is prefixed, and nothing here may
+  depend on a particular stack.
+- `rmd_dashboard.R` – the Rmd dashboard.
+  [`rmd_render_dashboard()`](https://torfason.github.io/starch/reference/rmd_render_dashboard.md)
+  renders one flexdashboard page per activity into
+  `strava_repo/dashboard_rmd/`, plus a reactable overview table and a
+  static index. Templates in `inst/rmd_templates/`.
+- `quarto_dynamic_dashboard.R` – the dynamic Quarto dashboard, a
+  prototype.
+  [`qd_render_dashboard()`](https://torfason.github.io/starch/reference/qd_render_dashboard.md)
+  builds `strava_repo/dashboard_qd/` from templates in
+  `inst/quarto_dynamic_templates/`. Static shells plus data injected as
+  classic scripts; see *No ES modules, no fetch* below.
 
 ### Pipeline stages
 
@@ -109,6 +127,80 @@ for comparison only.
 
 A conversion that fails leaves an old or absent output against a fresh
 marker, so it stays stale and is retried on the next run.
+
+### The dashboard stacks
+
+Three stacks run side by side, so they can be compared and any of them
+dropped without disturbing the others. Each owns a function prefix, a
+source-file prefix, a template directory and an output directory, and
+shares nothing but `dashboard_common.R`:
+
+| Stack | Functions | Sources | Templates | Output |
+|----|----|----|----|----|
+| Rmd | `rmd_` | `rmd_*.R` | `inst/rmd_templates/` | `strava_repo/dashboard_rmd/` |
+| Quarto dynamic | `qd_` | `quarto_dynamic_*.R` | `inst/quarto_dynamic_templates/` | `strava_repo/dashboard_qd/` |
+| Quarto static | `qs_` | `quarto_static_*.R` | `inst/quarto_static_templates/` | `strava_repo/dashboard_qs/` |
+
+The `qs_` stack is not implemented yet; the namespace is reserved. It
+will render one page per activity like the Rmd stack, but through
+Quarto.
+
+All of them read the same manifest and the same Parquet statistics –
+`qd_activities_table()` calls
+[`load_activities_csv()`](https://torfason.github.io/starch/reference/load_activities_csv.md)
+and `parquet_stream_stats()` rather than reimplementing them – so they
+cannot disagree on numbers. Rmd and Quarto-dynamic differ in where the
+data lives:
+
+|  | Rmd (`dashboard_rmd/`) | Quarto dynamic (`dashboard_qd/`) |
+|----|----|----|
+| Detail pages | one HTML per activity | one `detail_a.html`, chosen by `?id=` |
+| Data | baked into each page | `data/*.js`, pages are static shells |
+| Adding activities | renders N pages | writes N data files, renders nothing |
+| Charts | plotly + leaflet | Observable Plot (UMD) |
+| Table | reactable widget | hand-rolled, reads `data/activities.js` |
+
+The Quarto-dynamic output layout is:
+
+    dashboard_qd/
+      dash_index.html      # static shell, builds its sidebar from the manifest
+      dash_overview.html   # trends chart + activity table
+      detail_a.html        # one activity, selected by ?id= at view time
+      index.html           # redirect to dash_index.html
+      site_libs/           # Quarto's own assets, shared by both pages
+      lib/                 # d3, Plot, starch-dash.js, starch-dash.css
+      data/                # activities.js, act_<activity_id>.js
+
+Sources live in `inst/quarto_dynamic_templates/`. Files under `_static/`
+and the `_quarto.yml` are underscore-prefixed so a project render
+ignores them; R copies `_static/` into the output’s `lib/` itself.
+
+### No ES modules, no fetch
+
+This is the constraint the whole Quarto design turns on. The dashboard
+must open by double-clicking the file, and on a `file://` URL the
+browser gives the document an opaque origin, which blocks **ES module
+scripts** and **`fetch()`**. So:
+
+- Every script is a *classic* script. `d3` and `Plot` are loaded as UMD
+  builds, which is why they are vendored rather than imported.
+- Data is delivered by injecting further classic `<script>` tags.
+  `data/activities.js` and `data/act_<id>.js` are JSON wrapped in an
+  assignment for exactly this reason.
+- `history.replaceState()` also throws on `file://` in Chrome, so the
+  index guards it in a `try`/`catch`.
+
+This is also why the pages do not use Observable JS despite being Quarto
+documents. Quarto loads its OJS runtime as a module and ships an
+explicit `file://` guard; `Inputs` and `Plot` are then lazy-loaded from
+`cdn.jsdelivr.net` by Observable’s
+[`require()`](https://rdrr.io/r/base/library.html), so even with the
+guard removed and `embed-resources: true` the page would need the
+network on every open. The upstream issue is closed `wontfix`
+(quarto-cli#6371).
+
+Do not “modernize” this code to `import`/`fetch` without first deciding
+to give up opening the dashboard from disk.
 
 ### Per-activity metadata
 
@@ -226,6 +318,19 @@ relied on or extended.
   wrapper and persist the metadata across the round-trip.
 - **Reports.** The reporting layer reading from `activities_parquet/` is
   not started.
+- **Quarto dashboard is a prototype.** `detail_a.html` is a spike: the
+  route is drawn as a bare lat/lng trace rather than a map, because a
+  tiled basemap needs the network. Streams are thinned to
+  `qdetail_points` (600) on write. The `_a` in the name is room for
+  further per-activity templates.
+- **Pre-rendered pages.** The Quarto pages carry no data, so they could
+  be rendered at package build time and shipped in `inst/`, which would
+  drop Quarto from a user-facing dependency to a developer-only one. Not
+  done yet.
+- **Vendored libraries.** `qvendor_libs()` downloads d3 and Plot into
+  the output directory on first build, so the build needs the network
+  once, though the dashboard never does. Vendoring them into `inst/`
+  instead would trade ~500 KB of package sources for an offline build.
 - **Robust `speed` / `pace`.** The order reserves `speed` ahead of
   `speed_ms` for a version derived the most reliable way available per
   file – preferring device-reported channels (`velocity_smooth`,

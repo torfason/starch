@@ -65,6 +65,12 @@
 <code>strava_repo.R</code> – export import. <code><a href="reference/latest_strava_zip.html">latest_strava_zip()</a></code> picks the most recent archive from a directory; <code><a href="reference/strava_zip_to_repo.html">strava_zip_to_repo()</a></code> extracts it into a git repository, gzips the tracks that arrived uncompressed, and commits.</li>
 <li>
 <code>activities_parquet.R</code> – <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> converts archived activities to one Parquet file each, rebuilding only what changed. The internal <code>content_check()</code> implements the staleness test.</li>
+<li>
+<code>dashboard_common.R</code> – shared by every dashboard stack, and belonging to none of them. <code><a href="reference/load_activities_csv.html">load_activities_csv()</a></code> reads the export manifest, <code>parquet_stream_stats()</code> reads per-activity statistics out of the Parquet footers, and <code>require_pkgs()</code> checks the render-time Suggests. Nothing here is prefixed, and nothing here may depend on a particular stack.</li>
+<li>
+<code>rmd_dashboard.R</code> – the Rmd dashboard. <code><a href="reference/rmd_render_dashboard.html">rmd_render_dashboard()</a></code> renders one flexdashboard page per activity into <code>strava_repo/dashboard_rmd/</code>, plus a reactable overview table and a static index. Templates in <code>inst/rmd_templates/</code>.</li>
+<li>
+<code>quarto_dynamic_dashboard.R</code> – the dynamic Quarto dashboard, a prototype. <code><a href="reference/qd_render_dashboard.html">qd_render_dashboard()</a></code> builds <code>strava_repo/dashboard_qd/</code> from templates in <code>inst/quarto_dynamic_templates/</code>. Static shells plus data injected as classic scripts; see <em>No ES modules, no fetch</em> below.</li>
 </ul><div class="section level3">
 <h3 id="pipeline-stages">Pipeline stages<a class="anchor" aria-label="anchor" href="#pipeline-stages"></a></h3>
 <pre><code>strava_zips/*.zip  --strava_zip_to_repo()--&gt;  strava_repo/
@@ -76,6 +82,73 @@ strava_repo/activities/  --strava_activities_to_parquet()--&gt;  strava_repo/act
 <h3 id="parquet-staleness">Parquet staleness<a class="anchor" aria-label="anchor" href="#parquet-staleness"></a></h3>
 <p>Because every import rewrites the whole archive, modification times say nothing about whether an activity changed. <code>content_check()</code> instead records each input’s md5 as an <strong>empty marker file</strong> in <code>activities_hashes/</code>, named for the hash and stamped with the time that content was first seen. An activity is rebuilt when its Parquet output is older than its marker – which happens only when the bytes genuinely differ. The plain mtime comparison is returned alongside as <code>semistale</code>, for comparison only.</p>
 <p>A conversion that fails leaves an old or absent output against a fresh marker, so it stays stale and is retried on the next run.</p>
+</div>
+<div class="section level3">
+<h3 id="the-dashboard-stacks">The dashboard stacks<a class="anchor" aria-label="anchor" href="#the-dashboard-stacks"></a></h3>
+<p>Three stacks run side by side, so they can be compared and any of them dropped without disturbing the others. Each owns a function prefix, a source-file prefix, a template directory and an output directory, and shares nothing but <code>dashboard_common.R</code>:</p>
+<table class="table"><colgroup><col width="20%"><col width="20%"><col width="20%"><col width="20%"><col width="20%"></colgroup><thead><tr><th>Stack</th>
+<th>Functions</th>
+<th>Sources</th>
+<th>Templates</th>
+<th>Output</th>
+</tr></thead><tbody><tr><td>Rmd</td>
+<td><code>rmd_</code></td>
+<td><code>rmd_*.R</code></td>
+<td><code>inst/rmd_templates/</code></td>
+<td><code>strava_repo/dashboard_rmd/</code></td>
+</tr><tr><td>Quarto dynamic</td>
+<td><code>qd_</code></td>
+<td><code>quarto_dynamic_*.R</code></td>
+<td><code>inst/quarto_dynamic_templates/</code></td>
+<td><code>strava_repo/dashboard_qd/</code></td>
+</tr><tr><td>Quarto static</td>
+<td><code>qs_</code></td>
+<td><code>quarto_static_*.R</code></td>
+<td><code>inst/quarto_static_templates/</code></td>
+<td><code>strava_repo/dashboard_qs/</code></td>
+</tr></tbody></table><p>The <code>qs_</code> stack is not implemented yet; the namespace is reserved. It will render one page per activity like the Rmd stack, but through Quarto.</p>
+<p>All of them read the same manifest and the same Parquet statistics – <code>qd_activities_table()</code> calls <code><a href="reference/load_activities_csv.html">load_activities_csv()</a></code> and <code>parquet_stream_stats()</code> rather than reimplementing them – so they cannot disagree on numbers. Rmd and Quarto-dynamic differ in where the data lives:</p>
+<table class="table"><colgroup><col width="33%"><col width="33%"><col width="33%"></colgroup><thead><tr><th></th>
+<th>Rmd (<code>dashboard_rmd/</code>)</th>
+<th>Quarto dynamic (<code>dashboard_qd/</code>)</th>
+</tr></thead><tbody><tr><td>Detail pages</td>
+<td>one HTML per activity</td>
+<td>one <code>detail_a.html</code>, chosen by <code>?id=</code>
+</td>
+</tr><tr><td>Data</td>
+<td>baked into each page</td>
+<td>
+<code>data/*.js</code>, pages are static shells</td>
+</tr><tr><td>Adding activities</td>
+<td>renders N pages</td>
+<td>writes N data files, renders nothing</td>
+</tr><tr><td>Charts</td>
+<td>plotly + leaflet</td>
+<td>Observable Plot (UMD)</td>
+</tr><tr><td>Table</td>
+<td>reactable widget</td>
+<td>hand-rolled, reads <code>data/activities.js</code>
+</td>
+</tr></tbody></table><p>The Quarto-dynamic output layout is:</p>
+<pre><code>dashboard_qd/
+  dash_index.html      # static shell, builds its sidebar from the manifest
+  dash_overview.html   # trends chart + activity table
+  detail_a.html        # one activity, selected by ?id= at view time
+  index.html           # redirect to dash_index.html
+  site_libs/           # Quarto's own assets, shared by both pages
+  lib/                 # d3, Plot, starch-dash.js, starch-dash.css
+  data/                # activities.js, act_&lt;activity_id&gt;.js</code></pre>
+<p>Sources live in <code>inst/quarto_dynamic_templates/</code>. Files under <code>_static/</code> and the <code>_quarto.yml</code> are underscore-prefixed so a project render ignores them; R copies <code>_static/</code> into the output’s <code>lib/</code> itself.</p>
+</div>
+<div class="section level3">
+<h3 id="no-es-modules-no-fetch">No ES modules, no fetch<a class="anchor" aria-label="anchor" href="#no-es-modules-no-fetch"></a></h3>
+<p>This is the constraint the whole Quarto design turns on. The dashboard must open by double-clicking the file, and on a <code>file://</code> URL the browser gives the document an opaque origin, which blocks <strong>ES module scripts</strong> and <strong><code>fetch()</code></strong>. So:</p>
+<ul><li>Every script is a <em>classic</em> script. <code>d3</code> and <code>Plot</code> are loaded as UMD builds, which is why they are vendored rather than imported.</li>
+<li>Data is delivered by injecting further classic <code>&lt;script&gt;</code> tags. <code>data/activities.js</code> and <code>data/act_&lt;id&gt;.js</code> are JSON wrapped in an assignment for exactly this reason.</li>
+<li>
+<code>history.replaceState()</code> also throws on <code>file://</code> in Chrome, so the index guards it in a <code>try</code>/<code>catch</code>.</li>
+</ul><p>This is also why the pages do not use Observable JS despite being Quarto documents. Quarto loads its OJS runtime as a module and ships an explicit <code>file://</code> guard; <code>Inputs</code> and <code>Plot</code> are then lazy-loaded from <code>cdn.jsdelivr.net</code> by Observable’s <code><a href="https://rdrr.io/r/base/library.html" class="external-link">require()</a></code>, so even with the guard removed and <code>embed-resources: true</code> the page would need the network on every open. The upstream issue is closed <code>wontfix</code> (quarto-cli#6371).</p>
+<p>Do not “modernize” this code to <code>import</code>/<code>fetch</code> without first deciding to give up opening the dashboard from disk.</p>
 </div>
 <div class="section level3">
 <h3 id="per-activity-metadata">Per-activity metadata<a class="anchor" aria-label="anchor" href="#per-activity-metadata"></a></h3>
@@ -133,6 +206,12 @@ lat_offset, lng_offset             # recentred position</code></pre>
 <strong>Metadata through Parquet.</strong> <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> drops <code>attr(d, "activity_metadata")</code> on write, because <code><a href="https://nanoparquet.r-lib.org/reference/write_parquet.html" class="external-link">nanoparquet::write_parquet()</a></code> does not carry attributes. Add an attribute-preserving write/read wrapper and persist the metadata across the round-trip.</li>
 <li>
 <strong>Reports.</strong> The reporting layer reading from <code>activities_parquet/</code> is not started.</li>
+<li>
+<strong>Quarto dashboard is a prototype.</strong> <code>detail_a.html</code> is a spike: the route is drawn as a bare lat/lng trace rather than a map, because a tiled basemap needs the network. Streams are thinned to <code>qdetail_points</code> (600) on write. The <code>_a</code> in the name is room for further per-activity templates.</li>
+<li>
+<strong>Pre-rendered pages.</strong> The Quarto pages carry no data, so they could be rendered at package build time and shipped in <code>inst/</code>, which would drop Quarto from a user-facing dependency to a developer-only one. Not done yet.</li>
+<li>
+<strong>Vendored libraries.</strong> <code>qvendor_libs()</code> downloads d3 and Plot into the output directory on first build, so the build needs the network once, though the dashboard never does. Vendoring them into <code>inst/</code> instead would trade ~500 KB of package sources for an offline build.</li>
 <li>
 <strong>Robust <code>speed</code> / <code>pace</code>.</strong> The order reserves <code>speed</code> ahead of <code>speed_ms</code> for a version derived the most reliable way available per file – preferring device-reported channels (<code>velocity_smooth</code>, <code>dev_dist</code>) and falling back to computed – so that it is present whenever it can be inferred at all. <code><a href="reference/derive_columns.html">addcols_speed()</a></code> currently always computes from <code>distance</code> and <code>time</code>.</li>
 <li>

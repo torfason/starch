@@ -14,6 +14,10 @@
   : Locate the most recent Strava export archive
 - [`load_activities_csv()`](https://torfason.github.io/starch/reference/load_activities_csv.md)
   : Read the activity manifest from a Strava export
+- [`qd_render_dashboard()`](https://torfason.github.io/starch/reference/qd_render_dashboard.md)
+  : Render the Quarto dashboard
+- [`qd_view_dashboard()`](https://torfason.github.io/starch/reference/qd_view_dashboard.md)
+  : Open the Quarto dashboard in a browser
 - [`read_stream()`](https://torfason.github.io/starch/reference/read_stream.md)
   [`read_gpx_stream()`](https://torfason.github.io/starch/reference/read_stream.md)
   [`read_tcx_stream()`](https://torfason.github.io/starch/reference/read_stream.md)
@@ -21,19 +25,19 @@
   : Read a Strava export track file into a stream tibble
 - [`relocate_activity_cols()`](https://torfason.github.io/starch/reference/relocate_activity_cols.md)
   : Reorder stream columns into the canonical activity layout
-- [`render_activities()`](https://torfason.github.io/starch/reference/render_activities.md)
+- [`rmd_render_activities()`](https://torfason.github.io/starch/reference/rmd_render_activities.md)
   : Render per-activity dashboard pages
-- [`render_dashboard()`](https://torfason.github.io/starch/reference/render_dashboard.md)
+- [`rmd_render_dashboard()`](https://torfason.github.io/starch/reference/rmd_render_dashboard.md)
   : Render the activity dashboard
-- [`render_index()`](https://torfason.github.io/starch/reference/render_index.md)
+- [`rmd_render_index()`](https://torfason.github.io/starch/reference/rmd_render_index.md)
   : Render the dashboard index
-- [`render_overview_table()`](https://torfason.github.io/starch/reference/render_overview_table.md)
+- [`rmd_render_overview_table()`](https://torfason.github.io/starch/reference/rmd_render_overview_table.md)
   : Render the overview table page
-- [`render_trends()`](https://torfason.github.io/starch/reference/render_trends.md)
+- [`rmd_render_trends()`](https://torfason.github.io/starch/reference/rmd_render_trends.md)
   : Render the trends page
+- [`rmd_view_dashboard()`](https://torfason.github.io/starch/reference/rmd_view_dashboard.md)
+  : Open the dashboard in a browser
 - [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
   : Convert repository activities to Parquet
 - [`strava_zip_to_repo()`](https://torfason.github.io/starch/reference/strava_zip_to_repo.md)
   : Import a Strava export archive into a version-controlled repository
-- [`view_dashboard()`](https://torfason.github.io/starch/reference/view_dashboard.md)
-  : Open the dashboard in a browser
