@@ -1,0 +1,8 @@
+/*-- scss:defaults --*/
+
+// Bootswatch themes @import their webfont from fonts.googleapis.com. This
+// dashboard has to work from disk with no network at all, so the import is
+// suppressed and the type falls back to the system stack. Setting the path to
+// false rather than "" matters: Bootswatch guards the import with @if, and an
+// empty string is truthy in Sass.
+$web-font-path: false;

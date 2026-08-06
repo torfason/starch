@@ -1,0 +1,136 @@
+---
+title: "Activity"
+---
+
+<!-- One page for every activity. The activity is chosen at view time from the
+     ?id= query parameter, and its stream is pulled in by injecting
+     data/act_<id>.js as a classic script. That is the whole reason there is
+     no per-activity HTML file: adding activities writes data files only, and
+     this page is rendered once. -->
+
+<script src="lib/d3.min.js"></script>
+<script src="lib/plot.umd.min.js"></script>
+<script src="lib/starch-dash.js"></script>
+<script src="data/activities.js"></script>
+
+::: {#heading}
+:::
+
+::: {#stats .starch-stats}
+:::
+
+::: {#charts}
+:::
+
+<script>
+(function () {
+  var S = window.STARCH;
+  var id = S.idFromUrl();
+  var headEl = document.getElementById("heading");
+  var statsEl = document.getElementById("stats");
+  var chartsEl = document.getElementById("charts");
+
+  var meta = null;
+  S.activities().forEach(function (a) {
+    if (String(a.activity_id) === String(id)) meta = a;
+  });
+
+  function fail(msg) {
+    headEl.innerHTML = '<p class="starch-empty">' + msg + "</p>";
+  }
+
+  if (!id) { fail("No activity selected."); return; }
+
+  var title = [
+    (meta && meta.activity_name) || String(id),
+    meta && meta.activity_type,
+    meta && meta.date && !isNaN(meta.date) ? S.fmtDate(meta.date) : null
+  ].filter(Boolean).join(" \u00b7 ");
+  headEl.innerHTML = "<h2>" + title + "</h2>";
+  document.title = title;
+
+  function stat(k, v) {
+    return '<div class="starch-stat"><div class="k">' + k +
+      '</div><div class="v">' + v + "</div></div>";
+  }
+
+  /* One chart per available series. Plot is handed the point array directly;
+     the R side has already downsampled it to a few hundred points. */
+  function lineChart(rows, yKey, label, colour, reverse) {
+    var pts = rows.filter(function (p) {
+      return p.x !== null && p[yKey] !== null && p[yKey] !== undefined;
+    });
+    if (pts.length === 0) return null;
+    var fig = document.createElement("div");
+    var h = document.createElement("h3");
+    h.textContent = label;
+    fig.appendChild(h);
+    fig.appendChild(Plot.plot({
+      width: Math.max(640, chartsEl.clientWidth || 640),
+      height: 220,
+      marginLeft: 55,
+      x: { label: rows.xlab },
+      y: { label: label, grid: true, reverse: !!reverse },
+      marks: [Plot.line(pts, { x: "x", y: yKey, stroke: colour }), Plot.ruleY([])]
+    }));
+    return fig;
+  }
+
+  S.loadDetail(id, function (d) {
+    var rows = d.points || [];
+    // Plot against distance where there is any, falling back to elapsed time
+    // so that indoor activities still chart. Mirrors the Rmd template.
+    var useDist = d.has_distance === true;
+    rows.forEach(function (p) {
+      p.x = useDist ? (p.distance === null ? null : p.distance / 1000)
+                    : (p.time === null ? null : p.time / 60);
+    });
+    rows.xlab = useDist ? "Distance (km)" : "Time (min)";
+
+    statsEl.innerHTML = [
+      stat("Distance", isFinite(d.total_distance_km)
+        ? S.fmtNum(d.total_distance_km, 2) + " km" : "\u2014"),
+      stat("Duration", S.fmtDuration(d.total_time_s)),
+      stat("Avg pace", isFinite(d.avg_pace_min_km)
+        ? S.fmtPace(d.avg_pace_min_km) + " /km" : "\u2014"),
+      stat("Avg HR", isFinite(d.avg_heartrate)
+        ? S.fmtInt(d.avg_heartrate) + " bpm" : "\u2014"),
+      stat("Elev gain", isFinite(d.elevation_gain_m)
+        ? S.fmtInt(d.elevation_gain_m) + " m" : "\u2014")
+    ].join("");
+
+    // A route trace rather than a map: a tiled basemap would need the network,
+    // which defeats the point of a dashboard that opens from disk.
+    var gps = rows.filter(function (p) { return p.lat !== null && p.lng !== null; });
+    if (gps.length > 0) {
+      var routeWrap = document.createElement("div");
+      var rh = document.createElement("h3");
+      rh.textContent = "Route";
+      routeWrap.appendChild(rh);
+      routeWrap.appendChild(Plot.plot({
+        width: Math.max(640, chartsEl.clientWidth || 640),
+        height: 380,
+        projection: { type: "mercator", domain: {
+          type: "MultiPoint",
+          coordinates: gps.map(function (p) { return [p.lng, p.lat]; })
+        } },
+        marks: [Plot.line(gps, { x: "lng", y: "lat", stroke: "#2c3e50",
+          strokeWidth: 2, curve: "linear" })]
+      }));
+      chartsEl.appendChild(routeWrap);
+    }
+
+    [
+      lineChart(rows, "altitude", "Altitude (m)", "#34495e", false),
+      lineChart(rows, "pace", "Pace (min/km)", "#2980b9", true),
+      lineChart(rows, "heartrate", "Heart rate (bpm)", "#c0392b", false)
+    ].forEach(function (el) { if (el) chartsEl.appendChild(el); });
+
+    if (chartsEl.children.length === 0) {
+      chartsEl.innerHTML = '<p class="starch-empty">This activity has no chartable series.</p>';
+    }
+  }, function (msg) {
+    chartsEl.innerHTML = '<p class="starch-empty">' + msg + "</p>";
+  });
+})();
+</script>

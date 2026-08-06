@@ -35,6 +35,8 @@ Source lives in `R/`:
 - `derive_columns.R` – the `addcols_*` transforms: `addcols_time()`, `addcols_distance()` (adds `distance`, plus `dist_diff` when device distance `dev_dist` is present), `addcols_speed()` (smoothed), `addcols_speed_naive()`, `addcols_latlng_offset()` (coordinates relative to the first fix, since the absolute values dwarf the within-activity variation). Pure tibble → tibble; documented as one family via `@describeIn`. Also holds `activity_col_order` and `relocate_activity_cols()`.
 - `strava_repo.R` – export import. `latest_strava_zip()` picks the most recent archive from a directory; `strava_zip_to_repo()` extracts it into a git repository, gzips the tracks that arrived uncompressed, and commits.
 - `activities_parquet.R` – `strava_activities_to_parquet()` converts archived activities to one Parquet file each, rebuilding only what changed. The internal `content_check()` implements the staleness test.
+- `dashboard.R` – the Rmd dashboard. `render_dashboard()` renders one flexdashboard page per activity into `strava_repo/dashboard/`, plus a reactable overview table and a static index. Also holds `load_activities_csv()`, which reads the export manifest, and `parquet_stream_stats()`, which reads per-activity statistics out of the Parquet footers.
+- `quarto_dashboard.R` – the Quarto dashboard, a prototype running side by side with the Rmd one. `qrender_dashboard()` builds `strava_repo/qdashboard/`. Every function here is prefixed `q`, every source file `quarto_`, so the two stacks can be compared or either dropped without disturbing the other.
 
 ### Pipeline stages
 
@@ -52,6 +54,45 @@ The repository holds the export verbatim under version control: every import ext
 Because every import rewrites the whole archive, modification times say nothing about whether an activity changed. `content_check()` instead records each input's md5 as an **empty marker file** in `activities_hashes/`, named for the hash and stamped with the time that content was first seen. An activity is rebuilt when its Parquet output is older than its marker – which happens only when the bytes genuinely differ. The plain mtime comparison is returned alongside as `semistale`, for comparison only.
 
 A conversion that fails leaves an old or absent output against a fresh marker, so it stays stale and is retried on the next run.
+
+### The two dashboards
+
+Both read the same manifest and the same Parquet statistics – `qactivities_table()` calls `load_activities_csv()` and `parquet_stream_stats()` rather than reimplementing them – so they cannot disagree on numbers. They differ in where the data lives:
+
+| | Rmd (`dashboard/`) | Quarto (`qdashboard/`) |
+|---|---|---|
+| Detail pages | one HTML per activity | one `detail_a.html`, chosen by `?id=` |
+| Data | baked into each page | `data/*.js`, pages are static shells |
+| Adding activities | renders N pages | writes N data files, renders nothing |
+| Charts | plotly + leaflet | Observable Plot (UMD) |
+| Table | reactable widget | hand-rolled, reads `data/activities.js` |
+
+The Quarto output layout is:
+
+```
+qdashboard/
+  dash_index.html      # static shell, builds its sidebar from the manifest
+  dash_overview.html   # trends chart + activity table
+  detail_a.html        # one activity, selected by ?id= at view time
+  index.html           # redirect to dash_index.html
+  site_libs/           # Quarto's own assets, shared by both pages
+  lib/                 # d3, Plot, starch-dash.js, starch-dash.css
+  data/                # activities.js, act_<activity_id>.js
+```
+
+Sources live in `inst/quarto/`. Files under `_static/` and the `_quarto.yml` are underscore-prefixed so a project render ignores them; R copies `_static/` into the output's `lib/` itself.
+
+### No ES modules, no fetch
+
+This is the constraint the whole Quarto design turns on. The dashboard must open by double-clicking the file, and on a `file://` URL the browser gives the document an opaque origin, which blocks **ES module scripts** and **`fetch()`**. So:
+
+- Every script is a *classic* script. `d3` and `Plot` are loaded as UMD builds, which is why they are vendored rather than imported.
+- Data is delivered by injecting further classic `<script>` tags. `data/activities.js` and `data/act_<id>.js` are JSON wrapped in an assignment for exactly this reason.
+- `history.replaceState()` also throws on `file://` in Chrome, so the index guards it in a `try`/`catch`.
+
+This is also why the pages do not use Observable JS despite being Quarto documents. Quarto loads its OJS runtime as a module and ships an explicit `file://` guard; `Inputs` and `Plot` are then lazy-loaded from `cdn.jsdelivr.net` by Observable's `require()`, so even with the guard removed and `embed-resources: true` the page would need the network on every open. The upstream issue is closed `wontfix` (quarto-cli#6371).
+
+Do not "modernize" this code to `import`/`fetch` without first deciding to give up opening the dashboard from disk.
 
 ### Per-activity metadata
 
@@ -105,6 +146,9 @@ lat_offset, lng_offset             # recentred position
 
 - **Metadata through Parquet.** `strava_activities_to_parquet()` drops `attr(d, "activity_metadata")` on write, because `nanoparquet::write_parquet()` does not carry attributes. Add an attribute-preserving write/read wrapper and persist the metadata across the round-trip.
 - **Reports.** The reporting layer reading from `activities_parquet/` is not started.
+- **Quarto dashboard is a prototype.** `detail_a.html` is a spike: the route is drawn as a bare lat/lng trace rather than a map, because a tiled basemap needs the network. Streams are thinned to `qdetail_points` (600) on write. The `_a` in the name is room for further per-activity templates.
+- **Pre-rendered pages.** The Quarto pages carry no data, so they could be rendered at package build time and shipped in `inst/`, which would drop Quarto from a user-facing dependency to a developer-only one. Not done yet.
+- **Vendored libraries.** `qvendor_libs()` downloads d3 and Plot into the output directory on first build, so the build needs the network once, though the dashboard never does. Vendoring them into `inst/` instead would trade ~500 KB of package sources for an offline build.
 - **Robust `speed` / `pace`.** The order reserves `speed` ahead of `speed_ms` for a version derived the most reliable way available per file – preferring device-reported channels (`velocity_smooth`, `dev_dist`) and falling back to computed – so that it is present whenever it can be inferred at all. `addcols_speed()` currently always computes from `distance` and `time`.
 - **Tests for the pipeline.** Neither `strava_zip_to_repo()` nor `strava_activities_to_parquet()` has tests. Build a synthetic mini-export with `zip::zip()` from the `inst/extdata` fixtures rather than using a real export, which contains personal data. The invariant worth asserting is idempotence: run twice, and the second run extracts nothing, converts nothing, and makes no commit.
 - **One tree walk too many.** `strava_zip_to_repo()` calls `git_status()` before staging purely to count changes for the commit message. Running `git_add(".")` first and then `git_status(staged = TRUE)` would cut a full walk, which is minutes on a large import.

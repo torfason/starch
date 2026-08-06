@@ -38,6 +38,7 @@ Imports:
     here,
     lubridate,
     nanoparquet,
+    quarto,
     R.utils,
     slider,
     tibble,

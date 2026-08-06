@@ -1,0 +1,147 @@
+---
+title: "All activities"
+---
+
+<!-- This page carries no data and is never re-rendered when activities change:
+     everything comes from data/activities.js, written by qwrite_data(). The
+     scripts are classic (non-module) so the page works from a file:// URL. -->
+
+<script src="lib/d3.min.js"></script>
+<script src="lib/plot.umd.min.js"></script>
+<script src="lib/starch-dash.js"></script>
+<script src="data/activities.js"></script>
+
+## Trends
+
+::: {.starch-inputs}
+<div>
+<label for="bucket">Period</label>
+<select id="bucket">
+  <option value="week">Week</option>
+  <option value="month" selected>Month</option>
+  <option value="year">Year</option>
+</select>
+</div>
+<div>
+<label for="metric">Metric</label>
+<select id="metric">
+  <option value="distance" selected>Distance (km)</option>
+  <option value="time">Moving time (h)</option>
+  <option value="elevation">Elevation gain (m)</option>
+  <option value="count">Activities</option>
+</select>
+</div>
+<div>
+<label>Sports</label>
+<div class="starch-sports" id="sports"></div>
+</div>
+:::
+
+::: {#trends-chart}
+:::
+
+## Activities
+
+::: {#activities-table}
+:::
+
+<script>
+(function () {
+  var S = window.STARCH;
+  // Not "trends": the "## Trends" heading already claims that id for its
+  // <section>, and getElementById would return the section, so drawing the
+  // chart would wipe the heading and the controls with it.
+  var trendsEl = document.getElementById("trends-chart");
+  var sportsEl = document.getElementById("sports");
+  var sports = S.sports();
+
+  sportsEl.innerHTML = sports.map(function (s, i) {
+    return '<label><input type="checkbox" value="' + s + '" checked> ' + s + "</label>";
+  }).join("");
+
+  function chosenSports() {
+    return Array.prototype.slice.call(sportsEl.querySelectorAll("input:checked"))
+      .map(function (i) { return i.value; });
+  }
+
+  var table = null;
+
+  function redraw() {
+    S.drawTrends(trendsEl, {
+      bucket: document.getElementById("bucket").value,
+      metric: document.getElementById("metric").value,
+      sports: chosenSports()
+    });
+    if (table) table.setSports(chosenSports());
+  }
+
+  document.getElementById("bucket").addEventListener("change", redraw);
+  document.getElementById("metric").addEventListener("change", redraw);
+  sportsEl.addEventListener("change", redraw);
+  // Plot builds a fresh figure on every draw, so resize is debounced
+  // rather than run on each event.
+  var rt = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(rt);
+    rt = setTimeout(redraw, 200);
+  });
+
+  var num = function (d) {
+    return function (v) {
+      return '<span class="num">' + S.fmtNum(v, d) + "</span>";
+    };
+  };
+  var int = function (v) { return '<span class="num">' + S.fmtInt(v) + "</span>"; };
+  var dur = function (v) { return '<span class="num">' + S.fmtDuration(v) + "</span>"; };
+
+  var columns = [
+    { key: "activity_date", label: "Date", cell: function (v) { return S.fmtDate(v); } },
+    // target="_top" so the link is a navigation of the whole frameset when this
+    // page is shown inside the index's iframe, not of the iframe itself.
+    { key: "activity_name", label: "Name", cell: function (v, r) {
+        var label = v || "(unnamed)";
+        return r.has_stream
+          ? '<a href="dash_index.html#' + r.activity_id + '" target="_top">' + label + "</a>"
+          : label;
+      } },
+    { key: "activity_type", label: "Type" },
+    // Strava sets X-Frame-Options, so this one must open in a new tab.
+    { key: "activity_id", label: "Strava", cell: function (v) {
+        return v ? '<a href="https://www.strava.com/activities/' + v +
+          '" target="_blank" rel="noopener">' + v + "</a>" : "\u2014";
+      } },
+    { key: "distance_km", label: "Dist (km)", cell: num(2) },
+    { key: "elapsed_time_s", label: "Elapsed", cell: dur },
+    { key: "moving_time_s", label: "Moving", cell: dur },
+    { key: "elevation_gain_m", label: "Elev +", cell: int },
+    { key: "average_speed_ms", label: "Avg m/s", cell: num(2) },
+    { key: "max_speed_ms", label: "Max m/s", cell: num(2) },
+    { key: "average_heart_rate", label: "Avg HR", cell: int },
+    { key: "max_heart_rate", label: "Max HR", cell: int },
+    { key: "average_cadence", label: "Cadence", cell: int },
+    { key: "average_watts", label: "Avg W", cell: int },
+    { key: "max_watts", label: "Max W", cell: int },
+    { key: "calories", label: "kcal", cell: int },
+    { key: "relative_effort", label: "Effort", cell: int },
+    { key: "perceived_exertion", label: "RPE", cell: int },
+    { key: "activity_gear", label: "Gear" },
+    { key: "commute", label: "Commute" },
+    { key: "n_rows", label: "Points", cell: int },
+    { key: "n_rows_gps", label: "GPS", cell: int },
+    { key: "n_rows_dist", label: "Dist pts", cell: int },
+    { key: "n_rows_speed", label: "Speed pts", cell: int },
+    { key: "n_rows_hr", label: "HR pts", cell: int },
+    { key: "n_rows_alt", label: "Alt pts", cell: int },
+    { key: "n_rows_cad", label: "Cad pts", cell: int },
+    { key: "n_rows_watts", label: "Watt pts", cell: int },
+    { key: "stream_columns", label: "Stream columns" }
+  ];
+
+  table = S.renderTable(
+    document.getElementById("activities-table"), S.activities(), columns,
+    { pageSize: 25, sort: "activity_date" }
+  );
+
+  redraw();
+})();
+</script>

@@ -1,0 +1,22 @@
+project:
+  type: website
+  output-dir: _site
+
+# A website project rather than loose documents purely so that the pages share
+# one site_libs/ directory instead of each carrying its own copy of Bootstrap.
+website:
+  title: "starch"
+  navbar: false
+  search: false
+
+format:
+  html:
+    theme: [flatly, theme.scss]
+    toc: false
+    page-layout: full
+    # embed-resources must stay false: it would inline site_libs/ into every
+    # page, which is the opposite of sharing them, and the pages are served
+    # from a directory that always travels with lib/ and data/ anyway.
+    embed-resources: false
+    css:
+      - lib/starch-dash.css
