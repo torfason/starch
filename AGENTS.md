@@ -38,6 +38,7 @@ Source lives in `R/`:
 - `dashboard_common.R` – shared by every dashboard stack, and belonging to none of them. `load_activities_csv()` reads the export manifest, `parquet_stream_stats()` reads per-activity statistics out of the Parquet footers, and `require_pkgs()` checks the render-time Suggests. Nothing here is prefixed, and nothing here may depend on a particular stack.
 - `rmd_dashboard.R` – the Rmd dashboard. `rmd_render_dashboard()` renders one flexdashboard page per activity into `strava_repo/dashboard_rmd/`, plus a reactable overview table and a static index. Templates in `inst/rmd_templates/`.
 - `quarto_dynamic_dashboard.R` – the dynamic Quarto dashboard, a prototype. `qd_render_dashboard()` builds `strava_repo/dashboard_qd/` from templates in `inst/quarto_dynamic_templates/`. Static shells plus data injected as classic scripts; see *No ES modules, no fetch* below.
+- `quarto_static_dashboard.R` – the static Quarto dashboard. `qs_render_dashboard()` renders one page per activity into `strava_repo/dashboard_qs/` from templates in `inst/quarto_static_templates/`, then an index table linking to them. Templates are staged to a temp dir before rendering, because the installed copy is read-only and a Quarto project render writes into its own tree.
 
 ### Pipeline stages
 
@@ -66,7 +67,12 @@ Three stacks run side by side, so they can be compared and any of them dropped w
 | Quarto dynamic | `qd_` | `quarto_dynamic_*.R` | `inst/quarto_dynamic_templates/` | `strava_repo/dashboard_qd/` |
 | Quarto static | `qs_` | `quarto_static_*.R` | `inst/quarto_static_templates/` | `strava_repo/dashboard_qs/` |
 
-The `qs_` stack is not implemented yet; the namespace is reserved. It will render one page per activity like the Rmd stack, but through Quarto.
+The Quarto-static stack is the closest port of the Rmd one: same charts, same
+per-activity page, built by Quarto instead of rmarkdown. Its templates are plain
+qmd documents parameterised by `parquet_path`, so a page can be reproduced by
+hand outside the package. Because the pages are ordinary Quarto documents in a
+website project, the library assets they need land once in `site_libs/` rather
+than once per page.
 
 All of them read the same manifest and the same Parquet statistics – `qd_activities_table()` calls `load_activities_csv()` and `parquet_stream_stats()` rather than reimplementing them – so they cannot disagree on numbers. Rmd and Quarto-dynamic differ in where the data lives:
 

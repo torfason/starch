@@ -1,0 +1,27 @@
+---
+title: "Activities"
+---
+
+```{r}
+#| output: false
+library(dplyr)
+# Written next to this file by qs_render_index() just before the render. One
+# row per activity, already sorted, with href empty where no page exists yet.
+m <- readr::read_csv("manifest.csv", show_col_types = FALSE, progress = FALSE)
+```
+
+```{r}
+m |>
+  mutate(
+    Activity = if_else(
+      is.na(.data$href) | .data$href == "",
+      .data$name,
+      paste0("[", .data$name, "](", .data$href, ")")
+    )
+  ) |>
+  select(
+    Date = "date", Activity, Type = "type",
+    Distance = "distance", Duration = "duration"
+  ) |>
+  knitr::kable()
+```

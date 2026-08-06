@@ -20,6 +20,7 @@ Suggests:
     glue,
     htmltools,
     jsonlite,
+    knitr,
     leaflet,
     plotly,
     readr,

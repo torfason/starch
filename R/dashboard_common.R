@@ -12,6 +12,22 @@ require_pkgs <- function(pkgs) {
   invisible(TRUE)
 }
 
+# require_pkgs("quarto") only checks the R wrapper. The wrapper shells out to a
+# standalone Quarto binary that is installed separately and is frequently
+# absent, in which case the failure surfaces from inside quarto_render() as an
+# opaque "Error running quarto CLI from R".
+require_quarto <- function() {
+  ok <- tryCatch(!is.null(quarto::quarto_version()), error = function(e) FALSE)
+  if (!isTRUE(ok)) {
+    stop(
+      "The Quarto CLI was not found. It is a standalone program, installed ",
+      "separately from the quarto R package: see https://quarto.org.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 
 # Strava repeats several column names in activities.csv ("Distance", "Elapsed
 # Time", ...) and readr disambiguates them with a "...N" suffix, where N is the

@@ -1,0 +1,13 @@
+project:
+  type: website
+  output-dir: ../html
+
+format:
+  html:
+    theme: flatly
+    toc: false
+
+execute:
+  echo: false
+  warning: false
+  message: false

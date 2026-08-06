@@ -38,7 +38,7 @@ rmd_render_activities <- function(repo = here("strava_repo"),
   pq_dir <- fs::path(repo, "activities_parquet")
   html_dir <- fs::path(repo, "dashboard_rmd", "activities")
   template <- system.file(
-    "templates", "activity_overview.Rmd", package = "starch"
+    "rmd_templates", "activity_overview.Rmd", package = "starch"
   )
   if (!nzchar(template)) {
     stop("Could not locate activity_overview.Rmd in the installed package.",
