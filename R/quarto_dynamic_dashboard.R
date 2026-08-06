@@ -19,7 +19,7 @@
 
 # Vendored browser libraries. Pinned, because a silently updated Plot would
 # change every chart on the next build.
-qlib_sources <- list(
+qd_lib_sources <- list(
   list(
     file = "d3.min.js",
     url = "https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
@@ -36,10 +36,10 @@ qlib_sources <- list(
 # Point count kept per activity in the detail data files. The streams run to
 # tens of thousands of rows and none of the charts can resolve that, so they
 # are thinned on write rather than in the browser.
-qdetail_points <- 600L
+qd_detail_points <- 600L
 
-qquarto_dir <- function() {
-  path <- system.file("quarto", package = "starch")
+qd_quarto_dir <- function() {
+  path <- system.file("quarto_dynamic_templates", package = "starch")
   if (!nzchar(path)) {
     stop("Could not locate the quarto directory in the installed package.",
       call. = FALSE
@@ -51,7 +51,7 @@ qquarto_dir <- function() {
 # The manifest joined to per-activity Parquet statistics. Deliberately built
 # from the same load_activities_csv() and parquet_stream_stats() that the Rmd
 # overview table uses, so that the two dashboards cannot disagree on numbers.
-qactivities_table <- function(repo, quiet = FALSE) {
+qd_activities_table <- function(repo, quiet = FALSE) {
   pq_dir <- fs::path(repo, "activities_parquet")
 
   acts <- load_activities_csv(repo)
@@ -78,14 +78,14 @@ qactivities_table <- function(repo, quiet = FALSE) {
 
 # Evenly spaced thinning that always keeps the first and last point, so that
 # totals read off the ends of a stream survive the reduction.
-qthin <- function(n, keep) {
+qd_thin <- function(n, keep) {
   if (n <= keep) return(seq_len(n))
   unique(round(seq(1, n, length.out = keep)))
 }
 
 # JSON wrapped in an assignment, so the file is a classic script rather than
 # something that would have to be fetched.
-qwrite_js <- function(x, var, path) {
+qd_write_js <- function(x, var, path) {
   json <- jsonlite::toJSON(
     x,
     dataframe = "rows", na = "null", auto_unbox = TRUE,
@@ -95,7 +95,7 @@ qwrite_js <- function(x, var, path) {
 }
 
 # The manifest, as consumed by every page.
-qwrite_activities_js <- function(tbl, out, quiet = FALSE) {
+qd_write_activities_js <- function(tbl, out, quiet = FALSE) {
   data_dir <- fs::path(out, "data")
   fs::dir_create(data_dir)
 
@@ -115,7 +115,7 @@ qwrite_activities_js <- function(tbl, out, quiet = FALSE) {
   d$activity_date <- format(tbl$activity_date, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 
   path <- fs::path(data_dir, "activities.js")
-  qwrite_js(d, "STARCH_ACTIVITIES", path)
+  qd_write_js(d, "STARCH_ACTIVITIES", path)
   if (!quiet) {
     cli::cli_alert_success("Manifest written: {nrow(d)} activit{?y/ies}")
   }
@@ -126,7 +126,7 @@ qwrite_activities_js <- function(tbl, out, quiet = FALSE) {
 # Parquet it derives from; that is a plain mtime test rather than the content
 # hashing used by the Parquet layer, because the Parquet files are themselves
 # generated and their mtimes are meaningful.
-qwrite_detail_js <- function(tbl, out, max_files = 10, quiet = FALSE) {
+qd_write_detail_js <- function(tbl, out, max_files = 10, quiet = FALSE) {
   data_dir <- fs::path(out, "data")
   fs::dir_create(data_dir)
 
@@ -154,7 +154,7 @@ qwrite_detail_js <- function(tbl, out, max_files = 10, quiet = FALSE) {
     cli::cli_progress_bar("Writing activity data", total = n, clear = FALSE)
   }
   for (i in seq_len(n)) {
-    qwrite_one_detail(todo[i, ], todo$js[[i]])
+    qd_write_one_detail(todo[i, ], todo$js[[i]])
     if (!quiet) cli::cli_progress_update()
   }
   if (!quiet) {
@@ -164,7 +164,7 @@ qwrite_detail_js <- function(tbl, out, max_files = 10, quiet = FALSE) {
   invisible(todo)
 }
 
-qwrite_one_detail <- function(row, path) {
+qd_write_one_detail <- function(row, path) {
   d <- nanoparquet::read_parquet(row$parquet[[1]])
 
   hascol <- function(nm) nm %in% names(d) && any(!is.na(d[[nm]]))
@@ -175,7 +175,7 @@ qwrite_one_detail <- function(row, path) {
     c("time", "distance", "altitude", "heartrate", "pace", "lat", "lng"),
     names(d)
   )
-  idx <- qthin(nrow(d), qdetail_points)
+  idx <- qd_thin(nrow(d), qd_detail_points)
   pts <- if (length(pt_cols) == 0L || nrow(d) == 0L) {
     data.frame()
   } else {
@@ -233,11 +233,11 @@ qwrite_one_detail <- function(row, path) {
 # vendored into the package, which keeps ~500 KB of minified JavaScript out of
 # the sources. The build therefore needs the network the first time; the
 # resulting dashboard never does.
-qvendor_libs <- function(out, quiet = FALSE) {
+qd_vendor_libs <- function(out, quiet = FALSE) {
   lib_dir <- fs::path(out, "lib")
   fs::dir_create(lib_dir)
 
-  for (spec in qlib_sources) {
+  for (spec in qd_lib_sources) {
     dest <- fs::path(lib_dir, spec$file)
     if (file.exists(dest) && file.size(dest) > 0) next
     if (!quiet) cli::cli_alert_info("Downloading {.file {spec$file}}")
@@ -260,7 +260,7 @@ qvendor_libs <- function(out, quiet = FALSE) {
 
   # Our own assets are copied every time, so that editing them in the package
   # sources is picked up without having to clear the output directory.
-  static <- fs::path(qquarto_dir(), "_static")
+  static <- fs::path(qd_quarto_dir(), "_static")
   for (f in c("starch-dash.js", "starch-dash.css")) {
     fs::file_copy(fs::path(static, f), fs::path(lib_dir, f), overwrite = TRUE)
   }
@@ -272,10 +272,10 @@ qvendor_libs <- function(out, quiet = FALSE) {
 # source tree. Rendering is skipped when the pages already exist and no
 # template is newer, since the pages hold no data and only change when the
 # templates do.
-qrender_pages <- function(out, force = FALSE, quiet = FALSE) {
+qd_render_pages <- function(out, force = FALSE, quiet = FALSE) {
   require_pkgs("quarto")
 
-  src <- qquarto_dir()
+  src <- qd_quarto_dir()
   pages <- c("dash_overview.html", "detail_a.html")
   targets <- fs::path(out, pages)
   newest_src <- suppressWarnings(max(file.mtime(
@@ -344,17 +344,17 @@ qrender_pages <- function(out, force = FALSE, quiet = FALSE) {
 
 #' Render the Quarto dashboard
 #'
-#' Builds `qdashboard/` inside the Strava repository: a static index shell, an
+#' Builds `dashboard_qd/` inside the Strava repository: a static index shell, an
 #' overview page carrying a client-side trends chart and activity table, and a
 #' single detail page that renders whichever activity is named by its `?id=`
 #' query parameter.
 #'
 #' The pages carry no data of their own. Everything they display is written to
-#' `qdashboard/data/` as JavaScript files, so adding activities rewrites data
+#' `dashboard_qd/data/` as JavaScript files, so adding activities rewrites data
 #' and does not re-render any HTML. The result opens from disk without a web
 #' server, and needs no network once built.
 #'
-#' This runs alongside [render_dashboard()], which builds the older Rmd
+#' This runs alongside [rmd_render_dashboard()], which builds the older Rmd
 #' dashboard into `dashboard/`. The two share the manifest reader and the
 #' Parquet statistics helper and are otherwise independent.
 #'
@@ -366,25 +366,25 @@ qrender_pages <- function(out, force = FALSE, quiet = FALSE) {
 #'
 #' @return Path to the dashboard index, invisibly.
 #' @export
-qrender_dashboard <- function(repo = here("strava_repo"),
+qd_render_dashboard <- function(repo = here("strava_repo"),
                               max_files = 10,
                               force = FALSE,
                               quiet = FALSE) {
   require_pkgs(c("readr", "jsonlite", "quarto"))
 
   t_all <- Sys.time()
-  out <- fs::path(repo, "qdashboard")
+  out <- fs::path(repo, "dashboard_qd")
   if (!quiet) {
     cli::cli_h1("Rendering Quarto dashboard")
     cli::cli_alert_info("Repository {.path {repo}}")
   }
 
   fs::dir_create(out)
-  qvendor_libs(out, quiet = quiet)
-  tbl <- qactivities_table(repo, quiet = quiet)
-  qwrite_activities_js(tbl, out, quiet = quiet)
-  qwrite_detail_js(tbl, out, max_files = max_files, quiet = quiet)
-  qrender_pages(out, force = force, quiet = quiet)
+  qd_vendor_libs(out, quiet = quiet)
+  tbl <- qd_activities_table(repo, quiet = quiet)
+  qd_write_activities_js(tbl, out, quiet = quiet)
+  qd_write_detail_js(tbl, out, max_files = max_files, quiet = quiet)
+  qd_render_pages(out, force = force, quiet = quiet)
 
   index <- fs::path(out, "dash_index.html")
   if (!quiet) cli::cli_alert_success("Done ({elapsed(t_all)})")
@@ -397,11 +397,11 @@ qrender_dashboard <- function(repo = here("strava_repo"),
 #'
 #' @return Path to the index, invisibly.
 #' @export
-qview_dashboard <- function(repo = here("strava_repo")) {
-  index <- fs::path(repo, "qdashboard", "dash_index.html")
+qd_view_dashboard <- function(repo = here("strava_repo")) {
+  index <- fs::path(repo, "dashboard_qd", "dash_index.html")
   if (!file.exists(index)) {
     stop(
-      "No dashboard index at:\n  ", index, "\nRun qrender_dashboard() first.",
+      "No dashboard index at:\n  ", index, "\nRun qd_render_dashboard() first.",
       call. = FALSE
     )
   }

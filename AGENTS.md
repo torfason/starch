@@ -35,8 +35,9 @@ Source lives in `R/`:
 - `derive_columns.R` – the `addcols_*` transforms: `addcols_time()`, `addcols_distance()` (adds `distance`, plus `dist_diff` when device distance `dev_dist` is present), `addcols_speed()` (smoothed), `addcols_speed_naive()`, `addcols_latlng_offset()` (coordinates relative to the first fix, since the absolute values dwarf the within-activity variation). Pure tibble → tibble; documented as one family via `@describeIn`. Also holds `activity_col_order` and `relocate_activity_cols()`.
 - `strava_repo.R` – export import. `latest_strava_zip()` picks the most recent archive from a directory; `strava_zip_to_repo()` extracts it into a git repository, gzips the tracks that arrived uncompressed, and commits.
 - `activities_parquet.R` – `strava_activities_to_parquet()` converts archived activities to one Parquet file each, rebuilding only what changed. The internal `content_check()` implements the staleness test.
-- `dashboard.R` – the Rmd dashboard. `render_dashboard()` renders one flexdashboard page per activity into `strava_repo/dashboard/`, plus a reactable overview table and a static index. Also holds `load_activities_csv()`, which reads the export manifest, and `parquet_stream_stats()`, which reads per-activity statistics out of the Parquet footers.
-- `quarto_dashboard.R` – the Quarto dashboard, a prototype running side by side with the Rmd one. `qrender_dashboard()` builds `strava_repo/qdashboard/`. Every function here is prefixed `q`, every source file `quarto_`, so the two stacks can be compared or either dropped without disturbing the other.
+- `dashboard_common.R` – shared by every dashboard stack, and belonging to none of them. `load_activities_csv()` reads the export manifest, `parquet_stream_stats()` reads per-activity statistics out of the Parquet footers, and `require_pkgs()` checks the render-time Suggests. Nothing here is prefixed, and nothing here may depend on a particular stack.
+- `rmd_dashboard.R` – the Rmd dashboard. `rmd_render_dashboard()` renders one flexdashboard page per activity into `strava_repo/dashboard_rmd/`, plus a reactable overview table and a static index. Templates in `inst/rmd_templates/`.
+- `quarto_dynamic_dashboard.R` – the dynamic Quarto dashboard, a prototype. `qd_render_dashboard()` builds `strava_repo/dashboard_qd/` from templates in `inst/quarto_dynamic_templates/`. Static shells plus data injected as classic scripts; see *No ES modules, no fetch* below.
 
 ### Pipeline stages
 
@@ -55,11 +56,21 @@ Because every import rewrites the whole archive, modification times say nothing 
 
 A conversion that fails leaves an old or absent output against a fresh marker, so it stays stale and is retried on the next run.
 
-### The two dashboards
+### The dashboard stacks
 
-Both read the same manifest and the same Parquet statistics – `qactivities_table()` calls `load_activities_csv()` and `parquet_stream_stats()` rather than reimplementing them – so they cannot disagree on numbers. They differ in where the data lives:
+Three stacks run side by side, so they can be compared and any of them dropped without disturbing the others. Each owns a function prefix, a source-file prefix, a template directory and an output directory, and shares nothing but `dashboard_common.R`:
 
-| | Rmd (`dashboard/`) | Quarto (`qdashboard/`) |
+| Stack | Functions | Sources | Templates | Output |
+|---|---|---|---|---|
+| Rmd | `rmd_` | `rmd_*.R` | `inst/rmd_templates/` | `strava_repo/dashboard_rmd/` |
+| Quarto dynamic | `qd_` | `quarto_dynamic_*.R` | `inst/quarto_dynamic_templates/` | `strava_repo/dashboard_qd/` |
+| Quarto static | `qs_` | `quarto_static_*.R` | `inst/quarto_static_templates/` | `strava_repo/dashboard_qs/` |
+
+The `qs_` stack is not implemented yet; the namespace is reserved. It will render one page per activity like the Rmd stack, but through Quarto.
+
+All of them read the same manifest and the same Parquet statistics – `qd_activities_table()` calls `load_activities_csv()` and `parquet_stream_stats()` rather than reimplementing them – so they cannot disagree on numbers. Rmd and Quarto-dynamic differ in where the data lives:
+
+| | Rmd (`dashboard_rmd/`) | Quarto dynamic (`dashboard_qd/`) |
 |---|---|---|
 | Detail pages | one HTML per activity | one `detail_a.html`, chosen by `?id=` |
 | Data | baked into each page | `data/*.js`, pages are static shells |
@@ -67,10 +78,10 @@ Both read the same manifest and the same Parquet statistics – `qactivities_tab
 | Charts | plotly + leaflet | Observable Plot (UMD) |
 | Table | reactable widget | hand-rolled, reads `data/activities.js` |
 
-The Quarto output layout is:
+The Quarto-dynamic output layout is:
 
 ```
-qdashboard/
+dashboard_qd/
   dash_index.html      # static shell, builds its sidebar from the manifest
   dash_overview.html   # trends chart + activity table
   detail_a.html        # one activity, selected by ?id= at view time
@@ -80,7 +91,7 @@ qdashboard/
   data/                # activities.js, act_<activity_id>.js
 ```
 
-Sources live in `inst/quarto/`. Files under `_static/` and the `_quarto.yml` are underscore-prefixed so a project render ignores them; R copies `_static/` into the output's `lib/` itself.
+Sources live in `inst/quarto_dynamic_templates/`. Files under `_static/` and the `_quarto.yml` are underscore-prefixed so a project render ignores them; R copies `_static/` into the output's `lib/` itself.
 
 ### No ES modules, no fetch
 
