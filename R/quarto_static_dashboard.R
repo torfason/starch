@@ -62,6 +62,12 @@ qs_fmt_duration <- function(s) {
 #'
 #' @param repo Path to the Strava repository.
 #' @param max_files Maximum number of activities to render in one call.
+#' @param max_points Number of stream points kept in each page's charts. The
+#'   streams run to tens of thousands of points, which no chart can resolve and
+#'   which dominate the size of the rendered page, so they are thinned evenly
+#'   on the way in. Statistics are computed from the full stream regardless, so
+#'   this affects only chart resolution and file size. Use `0` to keep every
+#'   point, which is worth doing for a single activity examined closely.
 #' @param quiet Suppress progress reporting. Note that this also suppresses
 #'   the Quarto CLI's own output, including the detail of a failed render.
 #'
@@ -69,6 +75,7 @@ qs_fmt_duration <- function(s) {
 #' @export
 qs_render_activities <- function(repo = here("strava_repo"),
                                  max_files = 10,
+                                 max_points = 600,
                                  quiet = FALSE) {
   require_pkgs(c(
     "readr", "quarto", "leaflet", "plotly", "ggplot2", "slider", "knitr"
@@ -120,7 +127,8 @@ qs_render_activities <- function(repo = here("strava_repo"),
         activity_id = todo$activity_id[[i]],
         activity_name = todo$activity_name[[i]],
         activity_type = todo$activity_type[[i]],
-        smooth_window = 5
+        smooth_window = 5,
+        max_points = max_points
       ),
       quiet = quiet
     )
@@ -192,17 +200,18 @@ qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
 #' Renders outstanding activity pages, then rebuilds the index so that it
 #' links to whatever now exists.
 #'
-#' @param repo Path to the Strava repository.
-#' @param max_files Maximum number of activities to render in one call.
-#' @param quiet Suppress progress reporting.
+#' @inheritParams qs_render_activities
 #'
 #' @return Path to the index page, invisibly.
 #' @export
 qs_render_dashboard <- function(repo = here("strava_repo"),
                                 max_files = 10,
+                                max_points = 600,
                                 quiet = FALSE) {
   if (!quiet) cli::cli_h1("Rendering static Quarto dashboard")
-  qs_render_activities(repo, max_files = max_files, quiet = quiet)
+  qs_render_activities(
+    repo, max_files = max_files, max_points = max_points, quiet = quiet
+  )
   qs_render_index(repo, quiet = quiet)
 }
 

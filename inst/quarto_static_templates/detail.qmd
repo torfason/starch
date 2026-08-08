@@ -5,6 +5,7 @@ params:
   activity_name: ""
   activity_type: ""
   smooth_window: 5
+  max_points: 600
 ---
 
 ```{r}
@@ -82,6 +83,38 @@ if (has_hr) d$hr_sm <- smooth_centered(d$heartrate, params$smooth_window)
 date_str <- if (has_rows && hascol("timestamp")) {
   format(min(d$timestamp, na.rm = TRUE), "%Y-%m-%d %H:%M")
 } else ""
+
+# Thinning and rounding, applied only to what the charts consume. Every
+# statistic above is computed from the full stream first, and the smoothing
+# windows are applied at full resolution, so the numbers shown do not depend
+# on max_points. A dense multi-hour stream runs to tens of thousands of points
+# that no chart can resolve, and each one costs roughly ten characters of JSON
+# inside the rendered page.
+#
+# max_points = 0 keeps every point, for rendering a single activity at full
+# resolution.
+keep <- params$max_points
+idx <- if (!is.numeric(keep) || length(keep) != 1L || !is.finite(keep) ||
+  keep <= 0 || nrow(d) <= keep) {
+  seq_len(nrow(d))
+} else {
+  unique(round(seq(1, nrow(d), length.out = keep)))
+}
+d <- d[idx, ]
+
+# Trailing digits that no axis can show. Coordinates to five decimals is
+# roughly metre resolution, which is finer than the fixes themselves.
+round_if <- function(d, nm, digits) {
+  if (nm %in% names(d)) d[[nm]] <- round(d[[nm]], digits)
+  d
+}
+d <- d |>
+  round_if("xvar", 3) |>
+  round_if("altitude", 1) |>
+  round_if("pace_sm", 2) |>
+  round_if("hr_sm", 0) |>
+  round_if("lat", 5) |>
+  round_if("lng", 5)
 
 nz <- function(x) if (is.null(x) || is.na(x) || !nzchar(x)) NULL else x
 title_main <- nz(params$activity_name)

@@ -4,12 +4,24 @@
 \alias{qs_render_activities}
 \title{Render per-activity pages with Quarto}
 \usage{
-qs_render_activities(repo = here("strava_repo"), max_files = 10, quiet = FALSE)
+qs_render_activities(
+  repo = here("strava_repo"),
+  max_files = 10,
+  max_points = 600,
+  quiet = FALSE
+)
 }
 \arguments{
 \item{repo}{Path to the Strava repository.}
 
 \item{max_files}{Maximum number of activities to render in one call.}
+
+\item{max_points}{Number of stream points kept in each page's charts. The
+streams run to tens of thousands of points, which no chart can resolve and
+which dominate the size of the rendered page, so they are thinned evenly
+on the way in. Statistics are computed from the full stream regardless, so
+this affects only chart resolution and file size. Use \code{0} to keep every
+point, which is worth doing for a single activity examined closely.}
 
 \item{quiet}{Suppress progress reporting. Note that this also suppresses
 the Quarto CLI's own output, including the detail of a failed render.}
