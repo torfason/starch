@@ -17,6 +17,37 @@ library(plotly)
 library(nanoparquet)
 library(slider)
 
+# Widget data is serialized at full float precision, so a coordinate that
+# survived a round-trip is written out as 64.11436999999999 rather than
+# 64.11437. The trailing noise is invisible on the chart and is most of the
+# character count of the page.
+#
+# There is no single switch for this. htmlwidgets looks for a TOJSON_FUNC
+# attribute on the widget data and falls back to its own serializer, whose
+# digits can be set through TOJSON_ARGS. leaflet uses the fallback, so the
+# argument route works. plotly ships its own serializer with digits hardcoded
+# to 50 and ... passed through, so supplying digits that way is a duplicate
+# formal argument and an error; the function itself has to be replaced. The
+# replacement differs from plotly's only in digits.
+#
+# digits counts significant digits in both routes, and 7 is about metre
+# resolution at these latitudes.
+widget_digits <- function(w, digits = 7) {
+  if (is.null(attr(w$x, "TOJSON_FUNC", exact = TRUE))) {
+    attr(w$x, "TOJSON_ARGS") <- list(digits = digits)
+  } else {
+    attr(w$x, "TOJSON_FUNC") <- function(x, ...) {
+      jsonlite::toJSON(
+        x,
+        digits = digits, auto_unbox = TRUE, force = TRUE,
+        null = "null", na = "null",
+        time_format = "%Y-%m-%d %H:%M:%OS6", ...
+      )
+    }
+  }
+  w
+}
+
 d <- nanoparquet::read_parquet(params$parquet_path)
 
 # Not every activity carries every column. addcols_distance() and
@@ -158,7 +189,8 @@ if (has_gps) {
     as.matrix()
   leaflet(coords) |>
     addProviderTiles(providers$CartoDB.Positron) |>
-    addPolylines(color = "#2c3e50", weight = 4, opacity = 0.85)
+    addPolylines(color = "#2c3e50", weight = 4, opacity = 0.85) |>
+    widget_digits()
 } else {
   "No GPS data."
 }
@@ -173,7 +205,7 @@ if (has_alt && nzchar(xlab)) {
     geom_line(color = "#34495e") +
     labs(x = xlab, y = "Altitude (m)") +
     theme_minimal()
-  ggplotly(p, tooltip = c("x", "y"))
+  ggplotly(p, tooltip = c("x", "y")) |> widget_digits()
 } else {
   "No altitude data."
 }
@@ -188,7 +220,7 @@ if (has_pace && has_speed && nzchar(xlab)) {
     scale_y_reverse() +
     labs(x = xlab, y = "Pace (min/km)") +
     theme_minimal()
-  ggplotly(p, tooltip = c("x", "y"))
+  ggplotly(p, tooltip = c("x", "y")) |> widget_digits()
 } else {
   "No pace data."
 }
@@ -202,7 +234,7 @@ if (has_hr && nzchar(xlab)) {
     geom_line(color = "#c0392b", alpha = 0.85) +
     labs(x = xlab, y = "Heart rate (bpm)") +
     theme_minimal()
-  ggplotly(p, tooltip = c("x", "y"))
+  ggplotly(p, tooltip = c("x", "y")) |> widget_digits()
 } else {
   "No heart rate data."
 }
