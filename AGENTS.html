@@ -71,6 +71,8 @@
 <code>rmd_dashboard.R</code> – the Rmd dashboard. <code><a href="reference/rmd_render_dashboard.html">rmd_render_dashboard()</a></code> renders one flexdashboard page per activity into <code>strava_repo/dashboard_rmd/</code>, plus a reactable overview table and a static index. Templates in <code>inst/rmd_templates/</code>.</li>
 <li>
 <code>quarto_dynamic_dashboard.R</code> – the dynamic Quarto dashboard, a prototype. <code><a href="reference/qd_render_dashboard.html">qd_render_dashboard()</a></code> builds <code>strava_repo/dashboard_qd/</code> from templates in <code>inst/quarto_dynamic_templates/</code>. Static shells plus data injected as classic scripts; see <em>No ES modules, no fetch</em> below.</li>
+<li>
+<code>quarto_static_dashboard.R</code> – the static Quarto dashboard. <code><a href="reference/qs_render_dashboard.html">qs_render_dashboard()</a></code> renders one page per activity into <code>strava_repo/dashboard_qs/</code> from templates in <code>inst/quarto_static_templates/</code>, then an index table linking to them. Templates are staged to a temp dir before rendering, because the installed copy is read-only and a Quarto project render writes into its own tree.</li>
 </ul><div class="section level3">
 <h3 id="pipeline-stages">Pipeline stages<a class="anchor" aria-label="anchor" href="#pipeline-stages"></a></h3>
 <pre><code>strava_zips/*.zip  --strava_zip_to_repo()--&gt;  strava_repo/
@@ -106,7 +108,7 @@ strava_repo/activities/  --strava_activities_to_parquet()--&gt;  strava_repo/act
 <td><code>quarto_static_*.R</code></td>
 <td><code>inst/quarto_static_templates/</code></td>
 <td><code>strava_repo/dashboard_qs/</code></td>
-</tr></tbody></table><p>The <code>qs_</code> stack is not implemented yet; the namespace is reserved. It will render one page per activity like the Rmd stack, but through Quarto.</p>
+</tr></tbody></table><p>The Quarto-static stack is the closest port of the Rmd one: same charts, same per-activity page, built by Quarto instead of rmarkdown. Its templates are plain qmd documents parameterised by <code>parquet_path</code>, so a page can be reproduced by hand outside the package. Because the pages are ordinary Quarto documents in a website project, the library assets they need land once in <code>site_libs/</code> rather than once per page.</p>
 <p>All of them read the same manifest and the same Parquet statistics – <code>qd_activities_table()</code> calls <code><a href="reference/load_activities_csv.html">load_activities_csv()</a></code> and <code>parquet_stream_stats()</code> rather than reimplementing them – so they cannot disagree on numbers. Rmd and Quarto-dynamic differ in where the data lives:</p>
 <table class="table"><colgroup><col width="33%"><col width="33%"><col width="33%"></colgroup><thead><tr><th></th>
 <th>Rmd (<code>dashboard_rmd/</code>)</th>
