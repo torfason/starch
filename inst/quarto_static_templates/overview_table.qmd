@@ -47,6 +47,8 @@ dur_col <- function(name, width = 95) {
 }
 ```
 
+:::: {.column-screen-inset}
+
 ```{r}
 reactable(
   d[, c(
@@ -131,3 +133,5 @@ reactable(
   )
 )
 ```
+
+::::
