@@ -71,10 +71,17 @@ Source lives in `R/`:
   extracts it into a git repository, gzips the tracks that arrived
   uncompressed, and commits.
 - `activities_parquet.R` –
-  [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
+  [`activity_streams_to_parquet()`](https://torfason.github.io/starch/reference/activity_streams_to_parquet.md)
   converts archived activities to one Parquet file each, rebuilding only
   what changed. The internal `content_check()` implements the staleness
   test.
+- `dash.R` – the public dashboard API:
+  [`dash_render()`](https://torfason.github.io/starch/reference/dash_render.md),
+  [`dash_view()`](https://torfason.github.io/starch/reference/dash_view.md),
+  [`dash_update_heatmap()`](https://torfason.github.io/starch/reference/dash_update_heatmap.md).
+  Every stack keeps its own prefixed functions internal, and these
+  resolve to the static Quarto stack. If another stack becomes the
+  default, this is the only file that changes.
 - `press.R` –
   [`press()`](https://torfason.github.io/starch/reference/press.md), the
   one-call maintenance run: import the export archive, convert to
@@ -89,35 +96,35 @@ Source lives in `R/`:
   statistics out of the Parquet footers, and `require_pkgs()` checks the
   render-time Suggests. Nothing here is prefixed, and nothing here may
   depend on a particular stack.
-- `rmd_dashboard.R` – the Rmd dashboard.
-  [`rmd_render_dashboard()`](https://torfason.github.io/starch/reference/rmd_render_dashboard.md)
+- `rmd_dashboard.R` – the Rmd dashboard. `rmd_render_dashboard()`
   renders one flexdashboard page per activity into
   `strava_repo/dashboard_rmd/`, plus a reactable overview table and a
   static index. Templates in `inst/rmd_templates/`.
 - `quarto_dynamic_dashboard.R` – the dynamic Quarto dashboard, a
-  prototype.
-  [`qd_render_dashboard()`](https://torfason.github.io/starch/reference/qd_render_dashboard.md)
-  builds `strava_repo/dashboard_qd/` from templates in
-  `inst/quarto_dynamic_templates/`. Static shells plus data injected as
-  classic scripts; see *No ES modules, no fetch* below.
+  prototype. `qd_render_dashboard()` builds `strava_repo/dashboard_qd/`
+  from templates in `inst/quarto_dynamic_templates/`. Static shells plus
+  data injected as classic scripts; see *No ES modules, no fetch* below.
 - `quarto_static_dashboard.R` – the static Quarto dashboard.
-  [`qs_render_dashboard()`](https://torfason.github.io/starch/reference/qs_render_dashboard.md)
-  renders one page per activity into `strava_repo/dashboard_qs/` from
-  templates in `inst/quarto_static_templates/`, then three overview
-  pages (`activity_list.html` from `list.qmd`, `overview_table.html`
-  from `table.qmd`, `heatmap.html` from `heat.qmd`) and finally
-  `index.html`, the navigation shell. Quarto templates are staged to a
-  temp dir before rendering, because the installed copy is read-only and
-  a Quarto project render writes into its own tree. The shell is
-  assembled by R from `inst/quarto_static_shell/`, which is deliberately
-  outside the Quarto project: it is plain HTML with glue placeholders,
-  so adding an activity rebuilds one small file rather than re-rendering
-  every page, which is what a Quarto-native sidebar would cost.
+  `qs_render_dashboard()` renders one page per activity into
+  `strava_repo/dashboard_qs/` from templates in
+  `inst/quarto_static_templates/`, then three overview pages
+  (`overview_list.html`, `overview_table.html`, `overview_heatmap.html`,
+  each from the qmd of the same name) and finally `index.html`, the
+  navigation shell. Activity pages are nested under `activities/`, and
+  their template lives in the matching `activities/` subdirectory of the
+  project so that Quarto resolves `site_libs/` relative to it. Quarto
+  templates are staged to a temp dir before rendering, because the
+  installed copy is read-only and a Quarto project render writes into
+  its own tree. The shell is assembled by R from
+  `inst/quarto_static_shell/`, which is deliberately outside the Quarto
+  project: it is plain HTML with glue placeholders, so adding an
+  activity rebuilds one small file rather than re-rendering every page,
+  which is what a Quarto-native sidebar would cost.
 
 ### Pipeline stages
 
     strava_zips/*.zip  --strava_zip_to_repo()-->  strava_repo/
-    strava_repo/activities/  --strava_activities_to_parquet()-->  strava_repo/activities_parquet/
+    strava_repo/activities/  --activity_streams_to_parquet()-->  strava_repo/activities_parquet/
 
 The repository holds the export verbatim under version control: every
 import extracts the whole archive and overwrites, because activities can
@@ -283,7 +290,7 @@ to `gzip -n`) and won’t produce spurious git diffs.
 - **Long-running functions report progress.** Anything that moves
   thousands of files
   ([`strava_zip_to_repo()`](https://torfason.github.io/starch/reference/strava_zip_to_repo.md),
-  [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md))
+  [`activity_streams_to_parquet()`](https://torfason.github.io/starch/reference/activity_streams_to_parquet.md))
   reports each phase with `cli`, times the expensive steps with the
   internal `elapsed()` helper, and shows a progress bar over per-file
   loops. Every such function takes `quiet = FALSE`, and the reporting is
@@ -334,7 +341,7 @@ relied on or extended.
 ## Open tasks
 
 - **Metadata through Parquet.**
-  [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
+  [`activity_streams_to_parquet()`](https://torfason.github.io/starch/reference/activity_streams_to_parquet.md)
   drops `attr(d, "activity_metadata")` on write, because
   [`nanoparquet::write_parquet()`](https://nanoparquet.r-lib.org/reference/write_parquet.html)
   does not carry attributes. Add an attribute-preserving write/read
@@ -364,7 +371,7 @@ relied on or extended.
 - **Tests for the pipeline.** Neither
   [`strava_zip_to_repo()`](https://torfason.github.io/starch/reference/strava_zip_to_repo.md)
   nor
-  [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
+  [`activity_streams_to_parquet()`](https://torfason.github.io/starch/reference/activity_streams_to_parquet.md)
   has tests. Build a synthetic mini-export with
   [`zip::zip()`](https://r-lib.github.io/zip/reference/zip.html) from
   the `inst/extdata` fixtures rather than using a real export, which
@@ -384,7 +391,7 @@ relied on or extended.
 
 - **Empty streams.** A recordless FIT file reads as `0 x 0`, which has
   no Parquet schema, so
-  [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
+  [`activity_streams_to_parquet()`](https://torfason.github.io/starch/reference/activity_streams_to_parquet.md)
   substitutes a zero-row tibble with a single `timestamp` column in
   order to write something readable. The log records the original `0, 0`
   shape. Confirm this is the behaviour wanted, and check what
@@ -394,7 +401,7 @@ relied on or extended.
   to the canonical stream. Alternative is to drop them on write and
   recompute on read.
 - **The conversion log.**
-  [`strava_activities_to_parquet()`](https://torfason.github.io/starch/reference/strava_activities_to_parquet.md)
+  [`activity_streams_to_parquet()`](https://torfason.github.io/starch/reference/activity_streams_to_parquet.md)
   returns a per-activity log and does not write it anywhere. Whether it
   should be persisted, and where, is unresolved.
 - **Deleted activities.** Activities deleted in Strava vanish from later

@@ -14,6 +14,7 @@ press(
   max_parquet = 50,
   max_pages = 10,
   max_points = 600,
+  update_heatmap = FALSE,
   confirm = TRUE,
   view = TRUE,
   quiet = FALSE
@@ -42,6 +43,12 @@ press(
 - max_points:
 
   Stream points kept per page, passed to the renderer.
+
+- update_heatmap:
+
+  Rebuild the heat map even when it already exists. It reads every
+  Parquet file, so it is skipped by default; see
+  [`dash_update_heatmap()`](https://torfason.github.io/starch/reference/dash_update_heatmap.md).
 
 - confirm:
 

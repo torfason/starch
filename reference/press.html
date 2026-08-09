@@ -53,6 +53,7 @@ through, skipped past, or abandoned.</p>
 <span>  max_parquet <span class="op">=</span> <span class="fl">50</span>,</span>
 <span>  max_pages <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  max_points <span class="op">=</span> <span class="fl">600</span>,</span>
+<span>  update_heatmap <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  confirm <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  view <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  quiet <span class="op">=</span> <span class="cn">FALSE</span></span>
@@ -82,6 +83,12 @@ the import step is skipped if none is found.</p></dd>
 
 <dt id="arg-max-points">max_points<a class="anchor" aria-label="anchor" href="#arg-max-points"></a></dt>
 <dd><p>Stream points kept per page, passed to the renderer.</p></dd>
+
+
+<dt id="arg-update-heatmap">update_heatmap<a class="anchor" aria-label="anchor" href="#arg-update-heatmap"></a></dt>
+<dd><p>Rebuild the heat map even when it already exists. It
+reads every Parquet file, so it is skipped by default; see
+<code><a href="dash_update_heatmap.html">dash_update_heatmap()</a></code>.</p></dd>
 
 
 <dt id="arg-confirm">confirm<a class="anchor" aria-label="anchor" href="#arg-confirm"></a></dt>
