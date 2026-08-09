@@ -9,7 +9,7 @@ layout.
 ## Usage
 
 ``` r
-qs_render_index(repo = here("strava_repo"), quiet = FALSE)
+qs_render_index(repo = here("strava_repo"), verbose = FALSE, quiet = FALSE)
 ```
 
 ## Arguments
@@ -18,9 +18,15 @@ qs_render_index(repo = here("strava_repo"), quiet = FALSE)
 
   Path to the Strava repository.
 
+- verbose:
+
+  Pass the Quarto CLI's own output through, which is verbose but is the
+  only way to see why a render failed.
+
 - quiet:
 
-  Suppress progress reporting.
+  Suppress starch's own progress reporting. Independent of `verbose`:
+  the default reports progress without the CLI's output.
 
 ## Value
 

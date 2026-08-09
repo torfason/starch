@@ -10,6 +10,7 @@ qs_render_activities(
   repo = here("strava_repo"),
   max_files = 10,
   max_points = 600,
+  verbose = FALSE,
   quiet = FALSE
 )
 ```
@@ -34,10 +35,15 @@ qs_render_activities(
   every point, which is worth doing for a single activity examined
   closely.
 
+- verbose:
+
+  Pass the Quarto CLI's own output through, which is verbose but is the
+  only way to see why a render failed.
+
 - quiet:
 
-  Suppress progress reporting. Note that this also suppresses the Quarto
-  CLI's own output, including the detail of a failed render.
+  Suppress starch's own progress reporting. Independent of `verbose`:
+  the default reports progress without the CLI's output.
 
 ## Value
 

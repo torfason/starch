@@ -45,6 +45,7 @@ from the most recent activity and stopping after <code>max_files</code>.</p>
 <span>  repo <span class="op">=</span> <span class="fu">here</span><span class="op">(</span><span class="st">"strava_repo"</span><span class="op">)</span>,</span>
 <span>  max_files <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  max_points <span class="op">=</span> <span class="fl">600</span>,</span>
+<span>  verbose <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  quiet <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -70,9 +71,14 @@ this affects only chart resolution and file size. Use <code>0</code> to keep eve
 point, which is worth doing for a single activity examined closely.</p></dd>
 
 
+<dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
+<dd><p>Pass the Quarto CLI's own output through, which is verbose
+but is the only way to see why a render failed.</p></dd>
+
+
 <dt id="arg-quiet">quiet<a class="anchor" aria-label="anchor" href="#arg-quiet"></a></dt>
-<dd><p>Suppress progress reporting. Note that this also suppresses
-the Quarto CLI's own output, including the detail of a failed render.</p></dd>
+<dd><p>Suppress starch's own progress reporting. Independent of
+<code>verbose</code>: the default reports progress without the CLI's output.</p></dd>
 
 </dl></div>
     <div class="section level2">
