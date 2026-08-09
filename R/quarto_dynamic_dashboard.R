@@ -354,7 +354,7 @@ qd_render_pages <- function(out, force = FALSE, quiet = FALSE) {
 #' and does not re-render any HTML. The result opens from disk without a web
 #' server, and needs no network once built.
 #'
-#' This runs alongside [rmd_render_dashboard()], which builds the older Rmd
+#' This runs alongside `rmd_render_dashboard()`, which builds the older Rmd
 #' dashboard into `dashboard/`. The two share the manifest reader and the
 #' Parquet statistics helper and are otherwise independent.
 #'
@@ -365,7 +365,7 @@ qd_render_pages <- function(out, force = FALSE, quiet = FALSE) {
 #' @param quiet Suppress progress reporting.
 #'
 #' @return Path to the dashboard index, invisibly.
-#' @export
+#' @noRd
 qd_render_dashboard <- function(repo = here("strava_repo"),
                               max_files = 10,
                               force = FALSE,
@@ -396,7 +396,7 @@ qd_render_dashboard <- function(repo = here("strava_repo"),
 #' @param repo Path to the Strava repository.
 #'
 #' @return Path to the index, invisibly.
-#' @export
+#' @noRd
 qd_view_dashboard <- function(repo = here("strava_repo")) {
   index <- fs::path(repo, "dashboard_qd", "dash_index.html")
   if (!file.exists(index)) {

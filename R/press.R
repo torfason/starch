@@ -51,6 +51,9 @@ press_aborted <- function() {
 #' @param max_parquet Default number of activities to convert to Parquet.
 #' @param max_pages Default number of dashboard pages to render.
 #' @param max_points Stream points kept per page, passed to the renderer.
+#' @param update_heatmap Rebuild the heat map even when it already exists. It
+#'   reads every Parquet file, so it is skipped by default; see
+#'   [dash_update_heatmap()].
 #' @param confirm Ask before each step. `FALSE` runs the whole sequence on the
 #'   defaults without prompting.
 #' @param view Offer to open the dashboard at the end.
@@ -64,6 +67,7 @@ press <- function(repo = here("strava_repo"),
                   max_parquet = 50,
                   max_pages = 10,
                   max_points = 600,
+                  update_heatmap = FALSE,
                   confirm = TRUE,
                   view = TRUE,
                   quiet = FALSE) {
@@ -89,7 +93,7 @@ press <- function(repo = here("strava_repo"),
   if (is.null(zip_path) || !file.exists(zip_path)) {
     cli::cli_alert_warning("No export archive found; skipping import")
   } else {
-    cli::cli_alert_info("Archive {.file {fs::path_file(zip_path)}}")
+    cli::cli_alert_info("Archive {.path {zip_path}}")
     cli::cli_alert_info(
       "{round(file.size(zip_path) / 1024^2, 1)} MB, dated \\
        {format(file.mtime(zip_path), '%Y-%m-%d %H:%M')}"
@@ -128,7 +132,7 @@ press <- function(repo = here("strava_repo"),
   }
   if (is.na(n)) return(press_aborted())
   if (n > 0L) {
-    strava_activities_to_parquet(repo, max_files = n, quiet = quiet)
+    activity_streams_to_parquet(repo, max_files = n, quiet = quiet)
   }
 
   ## Render ------------------------------------------------------------------
@@ -139,29 +143,33 @@ press <- function(repo = here("strava_repo"),
     fs::path(repo, "activities_parquet", paste0(acts$stem, ".parquet"))
   )
   has_page <- file.exists(
-    fs::path(repo, "dashboard_qs", paste0(acts$stem, ".html"))
+    fs::path(repo, "dashboard_qs", "activities", paste0(acts$stem, ".html"))
   )
   cli::cli_alert_info(
     "{sum(has_pq & !has_page)} activit{?y/ies} awaiting a page, \\
      {sum(has_page)} already rendered"
   )
-  cli::cli_alert_info("Overview pages and the index are rebuilt either way")
+  cli::cli_alert_info(
+    "Overview pages and the index are rebuilt either way; the heat map \
+     {ifelse(update_heatmap, 'is rebuilt too', 'is not')}"
+  )
   n <- if (confirm) {
     press_ask_count("How many pages to render?", max_pages)
   } else {
     max_pages
   }
   if (is.na(n)) return(press_aborted())
-  qs_render_dashboard(
+  dash_render(
     repo,
-    max_files = n, max_points = max_points, quiet = quiet
+    max_files = n, max_points = max_points,
+    update_heatmap = update_heatmap, quiet = quiet
   )
 
   ## View --------------------------------------------------------------------
   if (view) {
     cli::cli_h2("View")
     ans <- press_ask("Open the dashboard now?", c("yes", "no"), "yes")
-    if (ans == "yes") qs_view_dashboard(repo)
+    if (ans == "yes") dash_view(repo)
   }
 
   cli::cli_alert_success("Done")

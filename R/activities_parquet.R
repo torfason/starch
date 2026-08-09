@@ -74,7 +74,7 @@ content_check <- function(infiles, outfiles, hash_dir) {
 #'
 #' @return A tibble logging one row per converted activity, invisibly.
 #' @export
-strava_activities_to_parquet <- function(repo = here("strava_repo"),
+activity_streams_to_parquet <- function(repo = here("strava_repo"),
                                          max_files = 400,
                                          quiet = FALSE) {
   t_all <- Sys.time()

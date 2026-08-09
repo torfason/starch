@@ -10,7 +10,9 @@ elapsed <- function(t0) {
 strava_repo_ignore <- c(
   "activities_parquet/",
   "activities_hashes/",
-  "dashboard/"
+  "dashboard_rmd/",
+  "dashboard_qd/",
+  "dashboard_qs/"
 )
 
 #' Locate the most recent Strava export archive

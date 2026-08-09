@@ -27,7 +27,7 @@ rmd_read_template <- function(name) {
 #' @param quiet Suppress progress reporting.
 #'
 #' @return A tibble of the activities rendered, invisibly.
-#' @export
+#' @noRd
 rmd_render_activities <- function(repo = here("strava_repo"),
                               max_files = 10,
                               quiet = FALSE) {
@@ -122,7 +122,7 @@ rmd_render_activities <- function(repo = here("strava_repo"),
 #' @param quiet Suppress progress reporting.
 #'
 #' @return Path to the written page, invisibly.
-#' @export
+#' @noRd
 rmd_render_overview_table <- function(repo = here("strava_repo"), quiet = FALSE) {
   require_pkgs(c("readr", "rmarkdown", "reactable", "htmltools"))
 
@@ -193,7 +193,7 @@ rmd_render_overview_table <- function(repo = here("strava_repo"), quiet = FALSE)
 #' @param quiet Suppress progress reporting.
 #'
 #' @return Path to the written page, invisibly.
-#' @export
+#' @noRd
 rmd_render_trends <- function(repo = here("strava_repo"), quiet = FALSE) {
   require_pkgs(c("readr", "rmarkdown", "plotly", "jsonlite"))
 
@@ -255,7 +255,7 @@ rmd_render_trends <- function(repo = here("strava_repo"), quiet = FALSE) {
 #' @param quiet Suppress progress reporting.
 #'
 #' @return Path to the written index, invisibly.
-#' @export
+#' @noRd
 rmd_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
   require_pkgs(c("readr", "glue", "htmltools"))
 
@@ -346,7 +346,7 @@ rmd_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
 #' @inheritParams rmd_render_activities
 #'
 #' @return Path to the index, invisibly.
-#' @export
+#' @noRd
 rmd_render_dashboard <- function(repo = here("strava_repo"),
                              max_files = 10,
                              quiet = FALSE) {
@@ -368,7 +368,7 @@ rmd_render_dashboard <- function(repo = here("strava_repo"),
 #' @param repo Path to the Strava repository.
 #'
 #' @return Path to the index, invisibly.
-#' @export
+#' @noRd
 rmd_view_dashboard <- function(repo = here("strava_repo")) {
   index <- fs::path(repo, "dashboard_rmd", "index.html")
   if (!file.exists(index)) {

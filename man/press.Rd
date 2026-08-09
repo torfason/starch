@@ -10,6 +10,7 @@ press(
   max_parquet = 50,
   max_pages = 10,
   max_points = 600,
+  update_heatmap = FALSE,
   confirm = TRUE,
   view = TRUE,
   quiet = FALSE
@@ -26,6 +27,10 @@ the import step is skipped if none is found.}
 \item{max_pages}{Default number of dashboard pages to render.}
 
 \item{max_points}{Stream points kept per page, passed to the renderer.}
+
+\item{update_heatmap}{Rebuild the heat map even when it already exists. It
+reads every Parquet file, so it is skipped by default; see
+\code{\link[=dash_update_heatmap]{dash_update_heatmap()}}.}
 
 \item{confirm}{Ask before each step. \code{FALSE} runs the whole sequence on the
 defaults without prompting.}
