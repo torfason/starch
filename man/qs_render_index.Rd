@@ -4,12 +4,16 @@
 \alias{qs_render_index}
 \title{Render the static dashboard index}
 \usage{
-qs_render_index(repo = here("strava_repo"), quiet = FALSE)
+qs_render_index(repo = here("strava_repo"), verbose = FALSE, quiet = FALSE)
 }
 \arguments{
 \item{repo}{Path to the Strava repository.}
 
-\item{quiet}{Suppress progress reporting.}
+\item{verbose}{Pass the Quarto CLI's own output through, which is verbose
+but is the only way to see why a render failed.}
+
+\item{quiet}{Suppress starch's own progress reporting. Independent of
+\code{verbose}: the default reports progress without the CLI's output.}
 }
 \value{
 Path to the written page, invisibly.

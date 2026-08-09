@@ -68,14 +68,17 @@ qs_fmt_duration <- function(s) {
 #'   on the way in. Statistics are computed from the full stream regardless, so
 #'   this affects only chart resolution and file size. Use `0` to keep every
 #'   point, which is worth doing for a single activity examined closely.
-#' @param quiet Suppress progress reporting. Note that this also suppresses
-#'   the Quarto CLI's own output, including the detail of a failed render.
+#' @param verbose Pass the Quarto CLI's own output through, which is verbose
+#'   but is the only way to see why a render failed.
+#' @param quiet Suppress starch's own progress reporting. Independent of
+#'   `verbose`: the default reports progress without the CLI's output.
 #'
 #' @return A tibble of the activities rendered, invisibly.
 #' @export
 qs_render_activities <- function(repo = here("strava_repo"),
                                  max_files = 10,
                                  max_points = 600,
+                                 verbose = FALSE,
                                  quiet = FALSE) {
   require_pkgs(c(
     "readr", "quarto", "leaflet", "plotly", "ggplot2", "slider", "knitr"
@@ -130,7 +133,7 @@ qs_render_activities <- function(repo = here("strava_repo"),
         smooth_window = 5,
         max_points = max_points
       ),
-      quiet = quiet
+      quiet = !verbose
     )
   }
 
@@ -152,11 +155,13 @@ qs_render_activities <- function(repo = here("strava_repo"),
 #' template holds no knowledge of the repository layout.
 #'
 #' @param repo Path to the Strava repository.
-#' @param quiet Suppress progress reporting.
+#' @inheritParams qs_render_activities
 #'
 #' @return Path to the written page, invisibly.
 #' @export
-qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
+qs_render_index <- function(repo = here("strava_repo"),
+                            verbose = FALSE,
+                            quiet = FALSE) {
   require_pkgs(c("readr", "quarto", "knitr"))
   require_quarto()
 
@@ -185,7 +190,7 @@ qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
   if (!quiet) cli::cli_alert_info("Rendering index ({nrow(manifest)} rows)")
   quarto::quarto_render(
     input = as.character(fs::path(stage$qmd, "index.qmd")),
-    quiet = quiet
+    quiet = !verbose
   )
   qs_collect(stage, out_dir)
 
@@ -207,12 +212,15 @@ qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
 qs_render_dashboard <- function(repo = here("strava_repo"),
                                 max_files = 10,
                                 max_points = 600,
+                                verbose = FALSE,
                                 quiet = FALSE) {
   if (!quiet) cli::cli_h1("Rendering static Quarto dashboard")
   qs_render_activities(
-    repo, max_files = max_files, max_points = max_points, quiet = quiet
+    repo,
+    max_files = max_files, max_points = max_points,
+    verbose = verbose, quiet = quiet
   )
-  qs_render_index(repo, quiet = quiet)
+  qs_render_index(repo, verbose = verbose, quiet = quiet)
 }
 
 

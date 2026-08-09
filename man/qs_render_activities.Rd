@@ -8,6 +8,7 @@ qs_render_activities(
   repo = here("strava_repo"),
   max_files = 10,
   max_points = 600,
+  verbose = FALSE,
   quiet = FALSE
 )
 }
@@ -23,8 +24,11 @@ on the way in. Statistics are computed from the full stream regardless, so
 this affects only chart resolution and file size. Use \code{0} to keep every
 point, which is worth doing for a single activity examined closely.}
 
-\item{quiet}{Suppress progress reporting. Note that this also suppresses
-the Quarto CLI's own output, including the detail of a failed render.}
+\item{verbose}{Pass the Quarto CLI's own output through, which is verbose
+but is the only way to see why a render failed.}
+
+\item{quiet}{Suppress starch's own progress reporting. Independent of
+\code{verbose}: the default reports progress without the CLI's output.}
 }
 \value{
 A tibble of the activities rendered, invisibly.
