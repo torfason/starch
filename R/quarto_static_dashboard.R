@@ -200,6 +200,75 @@ qs_render_index <- function(repo = here("strava_repo"),
 }
 
 
+#' Render the filterable activity table
+#'
+#' Writes `dashboard_qs/overview_table.html`, a sortable and filterable table of
+#' every activity in the manifest joined to per-activity statistics read from
+#' the Parquet layer. Each row links out to the activity on Strava and, where a
+#' page exists, back into the dashboard.
+#'
+#' Unlike the detail pages this reads every Parquet footer, so it is the slow
+#' part of a full build, and the table's data is embedded in the page rather
+#' than shared.
+#'
+#' @param repo Path to the Strava repository.
+#' @inheritParams qs_render_activities
+#'
+#' @return Path to the written page, invisibly.
+#' @export
+qs_render_table <- function(repo = here("strava_repo"),
+                            verbose = FALSE,
+                            quiet = FALSE) {
+  require_pkgs(c("readr", "quarto", "reactable", "htmltools"))
+  require_quarto()
+
+  out_dir <- fs::path(repo, "dashboard_qs")
+  pq_dir <- fs::path(repo, "activities_parquet")
+
+  acts <- load_activities_csv(repo)
+  acts$parquet <- ifelse(
+    is.na(acts$stem), NA_character_,
+    as.character(fs::path(pq_dir, paste0(acts$stem, ".parquet")))
+  )
+  acts$has_page <- !is.na(acts$stem) &
+    file.exists(fs::path(out_dir, paste0(acts$stem, ".html")))
+
+  have_pq <- !is.na(acts$parquet) & file.exists(acts$parquet)
+  if (!quiet) {
+    cli::cli_alert_info(
+      "Reading statistics for {sum(have_pq)} of {nrow(acts)} activit{?y/ies}"
+    )
+  }
+  t0 <- Sys.time()
+  stats <- parquet_stream_stats(acts$parquet[have_pq], quiet = quiet)
+
+  # Widen back to one row per manifest entry, leaving unconverted activities NA.
+  full <- empty_stream_stats()[rep(NA_integer_, nrow(acts)), ]
+  if (nrow(stats) > 0L) full[have_pq, ] <- stats
+  tbl <- dplyr::bind_cols(acts, full)
+
+  stage <- qs_stage()
+  data_file <- fs::path(stage$qmd, "table_data.rds")
+  saveRDS(tbl, data_file)
+
+  quarto::quarto_render(
+    input = as.character(fs::path(stage$qmd, "table.qmd")),
+    output_file = "overview_table.html",
+    execute_params = list(data_path = as.character(fs::path_abs(data_file))),
+    quiet = !verbose
+  )
+  qs_collect(stage, out_dir)
+
+  out <- fs::path(out_dir, "overview_table.html")
+  if (!quiet) {
+    cli::cli_alert_success(
+      "Overview table written: {nrow(tbl)} row{?s} ({elapsed(t0)})"
+    )
+  }
+  invisible(out)
+}
+
+
 #' Render the static Quarto dashboard
 #'
 #' Renders outstanding activity pages, then rebuilds the index so that it
@@ -220,6 +289,7 @@ qs_render_dashboard <- function(repo = here("strava_repo"),
     max_files = max_files, max_points = max_points,
     verbose = verbose, quiet = quiet
   )
+  qs_render_table(repo, verbose = verbose, quiet = quiet)
   qs_render_index(repo, verbose = verbose, quiet = quiet)
 }
 

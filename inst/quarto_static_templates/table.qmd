@@ -1,0 +1,131 @@
+---
+title: "All activities"
+page-layout: full
+params:
+  data_path: ""
+---
+
+```{r}
+#| output: false
+library(reactable)
+library(htmltools)
+
+d <- readRDS(params$data_path)
+
+fmt_duration <- function(s) {
+  ifelse(
+    is.na(s), "\u2014",
+    ifelse(
+      s >= 3600,
+      sprintf("%d:%02d:%02d", s %/% 3600, (s %% 3600) %/% 60, round(s %% 60)),
+      sprintf("%d:%02d", s %/% 60, round(s %% 60))
+    )
+  )
+}
+
+num_col <- function(name, digits = 1, width = 90) {
+  colDef(
+    name = name, width = width, filterable = FALSE,
+    cell = function(v) if (is.na(v)) "\u2014" else formatC(v, format = "f", digits = digits, big.mark = " ")
+  )
+}
+
+int_col <- function(name, width = 85) {
+  colDef(
+    name = name, width = width, filterable = FALSE,
+    cell = function(v) if (is.na(v)) "\u2014" else format(round(v), big.mark = " ")
+  )
+}
+
+dur_col <- function(name, width = 95) {
+  colDef(
+    name = name, width = width, filterable = FALSE,
+    cell = function(v) fmt_duration(v)
+  )
+}
+```
+
+```{r}
+reactable(
+  d[, c(
+    "activity_date", "activity_id", "activity_name", "activity_type",
+    "distance_km", "elapsed_time_s", "moving_time_s",
+    "elevation_gain_m", "average_speed_ms", "max_speed_ms",
+    "average_heart_rate", "max_heart_rate", "average_cadence",
+    "average_watts", "max_watts", "calories",
+    "relative_effort", "perceived_exertion", "activity_gear", "commute",
+    "n_rows", "n_rows_gps", "n_rows_dist", "n_rows_speed", "n_rows_hr",
+    "n_rows_alt", "n_rows_cad", "n_rows_watts", "stream_columns", "stem"
+  )],
+  filterable = TRUE,
+  searchable = TRUE,
+  resizable = TRUE,
+  highlight = TRUE,
+  compact = TRUE,
+  wrap = FALSE,
+  showPageSizeOptions = TRUE,
+  pageSizeOptions = c(25, 50, 100, 250),
+  defaultPageSize = 25,
+  defaultSorted = list(activity_date = "desc"),
+  defaultColDef = colDef(headerStyle = list(fontSize = "0.8rem")),
+  columns = list(
+    activity_date = colDef(
+      name = "Date", width = 135,
+      cell = function(v) if (is.na(v)) "\u2014" else format(v, "%Y-%m-%d %H:%M")
+    ),
+    # The id is the natural handle for the Strava link. target="_blank" is
+    # required: this page is displayed inside the index's iframe, and Strava
+    # sets X-Frame-Options, so an in-frame navigation would just fail blank.
+    activity_id = colDef(
+      name = "Strava", width = 110,
+      cell = function(v) {
+        if (is.na(v) || !nzchar(v)) return("\u2014")
+        tags$a(href = paste0("https://www.strava.com/activities/", v),
+               target = "_blank", rel = "noopener", v)
+      }
+    ),
+    # Links back into the dashboard. The href resolves to the same document as
+    # the top frame, so target="_top" makes this a fragment navigation that the
+    # index's hashchange handler picks up, rather than a page reload.
+    activity_name = colDef(
+      name = "Name", minWidth = 220,
+      cell = function(v, index) {
+        label <- if (is.na(v) || !nzchar(v)) "(unnamed)" else v
+        if (isTRUE(d$has_page[index])) {
+          tags$a(href = paste0("index.html#", d$activity_id[index]),
+                 target = "_top", label)
+        } else {
+          label
+        }
+      }
+    ),
+    activity_type = colDef(name = "Type", width = 110),
+    distance_km = num_col("Dist (km)", 2),
+    elapsed_time_s = dur_col("Elapsed"),
+    moving_time_s = dur_col("Moving"),
+    elevation_gain_m = int_col("Elev +"),
+    average_speed_ms = num_col("Avg m/s", 2),
+    max_speed_ms = num_col("Max m/s", 2),
+    average_heart_rate = int_col("Avg HR"),
+    max_heart_rate = int_col("Max HR"),
+    average_cadence = int_col("Cadence"),
+    average_watts = int_col("Avg W"),
+    max_watts = int_col("Max W"),
+    calories = int_col("kcal"),
+    relative_effort = int_col("Effort"),
+    perceived_exertion = int_col("RPE"),
+    activity_gear = colDef(name = "Gear", width = 130),
+    commute = colDef(name = "Commute", width = 100),
+    n_rows = int_col("Points"),
+    n_rows_gps = int_col("GPS"),
+    n_rows_dist = int_col("Dist pts"),
+    n_rows_speed = int_col("Speed pts"),
+    n_rows_hr = int_col("HR pts"),
+    n_rows_alt = int_col("Alt pts"),
+    n_rows_cad = int_col("Cad pts"),
+    n_rows_watts = int_col("Watt pts"),
+    stream_columns = colDef(name = "Stream columns", minWidth = 260),
+    stem = colDef(name = "File", width = 130, show = FALSE)
+  )
+)
+```
