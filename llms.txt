@@ -48,6 +48,8 @@ library(starch)
   : Render per-activity pages with Quarto
 - [`qs_render_dashboard()`](https://torfason.github.io/starch/reference/qs_render_dashboard.md)
   : Render the static Quarto dashboard
+- [`qs_render_heatmap()`](https://torfason.github.io/starch/reference/qs_render_heatmap.md)
+  : Render the route heat map
 - [`qs_render_index()`](https://torfason.github.io/starch/reference/qs_render_index.md)
   : Render the dashboard navigation index
 - [`qs_render_list()`](https://torfason.github.io/starch/reference/qs_render_list.md)
