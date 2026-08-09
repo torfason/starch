@@ -1,15 +1,13 @@
-# Render the static dashboard index
+# Render the dashboard navigation index
 
-Writes `dashboard_qs/index.html`, a table of every activity in the
-manifest, linking to those that already have a page. The manifest is
-written to the staged project as `manifest.csv` and read back by
-`index.qmd`, so the template holds no knowledge of the repository
-layout.
+Writes `dashboard_qs/index.html`, a sidebar of every activity in the
+manifest over an iframe that shows the selected page. Overview pages are
+listed above the activities, and only those that exist are offered.
 
 ## Usage
 
 ``` r
-qs_render_index(repo = here("strava_repo"), verbose = FALSE, quiet = FALSE)
+qs_render_index(repo = here("strava_repo"), quiet = FALSE)
 ```
 
 ## Arguments
@@ -18,16 +16,16 @@ qs_render_index(repo = here("strava_repo"), verbose = FALSE, quiet = FALSE)
 
   Path to the Strava repository.
 
-- verbose:
-
-  Pass the Quarto CLI's own output through, which is verbose but is the
-  only way to see why a render failed.
-
 - quiet:
 
-  Suppress starch's own progress reporting. Independent of `verbose`:
-  the default reports progress without the CLI's output.
+  Suppress progress reporting.
 
 ## Value
 
 Path to the written page, invisibly.
+
+## Details
+
+The shell is assembled by R rather than rendered by Quarto, so adding an
+activity rebuilds one small file instead of re-rendering every page,
+which is what a Quarto-native sidebar would require.

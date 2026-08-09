@@ -49,7 +49,11 @@ library(starch)
 - [`qs_render_dashboard()`](https://torfason.github.io/starch/reference/qs_render_dashboard.md)
   : Render the static Quarto dashboard
 - [`qs_render_index()`](https://torfason.github.io/starch/reference/qs_render_index.md)
-  : Render the static dashboard index
+  : Render the dashboard navigation index
+- [`qs_render_list()`](https://torfason.github.io/starch/reference/qs_render_list.md)
+  : Render the plain activity list
+- [`qs_render_table()`](https://torfason.github.io/starch/reference/qs_render_table.md)
+  : Render the filterable activity table
 - [`qs_view_dashboard()`](https://torfason.github.io/starch/reference/qs_view_dashboard.md)
   : Open the static Quarto dashboard in a browser
 - [`read_stream()`](https://torfason.github.io/starch/reference/read_stream.md)

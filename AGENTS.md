@@ -96,10 +96,16 @@ Source lives in `R/`:
 - `quarto_static_dashboard.R` – the static Quarto dashboard.
   [`qs_render_dashboard()`](https://torfason.github.io/starch/reference/qs_render_dashboard.md)
   renders one page per activity into `strava_repo/dashboard_qs/` from
-  templates in `inst/quarto_static_templates/`, then an index table
-  linking to them. Templates are staged to a temp dir before rendering,
-  because the installed copy is read-only and a Quarto project render
-  writes into its own tree.
+  templates in `inst/quarto_static_templates/`, then two overview pages
+  (`activity_list.html` from `list.qmd`, `overview_table.html` from
+  `table.qmd`) and finally `index.html`, the navigation shell. Quarto
+  templates are staged to a temp dir before rendering, because the
+  installed copy is read-only and a Quarto project render writes into
+  its own tree. The shell is assembled by R from
+  `inst/quarto_static_shell/`, which is deliberately outside the Quarto
+  project: it is plain HTML with glue placeholders, so adding an
+  activity rebuilds one small file rather than re-rendering every page,
+  which is what a Quarto-native sidebar would cost.
 
 ### Pipeline stages
 
