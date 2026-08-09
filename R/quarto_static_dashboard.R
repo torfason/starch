@@ -310,6 +310,113 @@ qs_render_table <- function(repo = here("strava_repo"),
 }
 
 
+#' Render the route heat map
+#'
+#' Writes `dashboard_qs/heatmap.html`, every GPS point from every activity as a
+#' single leaflet heat layer.
+#'
+#' The points are rounded to a grid and counted, so repeated routes contribute
+#' weight rather than overplotting, and the page carries one row per cell
+#' instead of one per fix. At the default five decimals the grid is about a
+#' metre, which is finer than the fixes themselves, so the reduction comes only
+#' from genuine repetition: expect the page to run to several megabytes.
+#'
+#' @param repo Path to the Strava repository.
+#' @param types Activity types to include, or `NULL` for all.
+#' @param grid_digits Decimal places to round coordinates to before counting.
+#'   `NULL` keeps every point at full precision and does not aggregate.
+#' @param max_points Cap on the number of grid cells written to the page, or
+#'   `NULL` for no cap. A blunt instrument for trading detail against file
+#'   size: cells are dropped evenly across the aggregated table, which is not
+#'   spatially even, so prefer a coarser `grid_digits` where that will do.
+#' @inheritParams qs_render_activities
+#'
+#' @return Path to the written page, invisibly.
+#' @export
+qs_render_heatmap <- function(repo = here("strava_repo"),
+                              types = NULL,
+                              grid_digits = 5,
+                              max_points = NULL,
+                              verbose = FALSE,
+                              quiet = FALSE) {
+  require_pkgs(c("quarto", "leaflet", "leaflet.extras", "jsonlite"))
+  require_quarto()
+
+  out_dir <- fs::path(repo, "dashboard_qs")
+  pq_dir <- fs::path(repo, "activities_parquet")
+
+  acts <- load_activities_csv(repo)
+  acts <- acts[!is.na(acts$stem), ]
+  if (!is.null(types)) acts <- acts[acts$activity_type %in% types, ]
+  files <- fs::path(pq_dir, paste0(acts$stem, ".parquet"))
+  files <- files[file.exists(files)]
+
+  if (length(files) == 0L) {
+    stop("No Parquet files to map in:\n  ", pq_dir, call. = FALSE)
+  }
+
+  t0 <- Sys.time()
+  if (!quiet) {
+    cli::cli_progress_bar("Reading streams", total = length(files))
+  }
+  parts <- vector("list", length(files))
+  for (i in seq_along(files)) {
+    if (!quiet) cli::cli_progress_update()
+    d <- nanoparquet::read_parquet(files[[i]])
+    if (!all(c("lat", "lng") %in% names(d))) next
+    d <- d[!is.na(d$lat) & !is.na(d$lng), c("lat", "lng")]
+    if (nrow(d) == 0L) next
+    if (!is.null(grid_digits)) {
+      d$lat <- round(d$lat, grid_digits)
+      d$lng <- round(d$lng, grid_digits)
+      d <- dplyr::count(d, .data$lat, .data$lng, name = "n")
+    } else {
+      d$n <- 1L
+    }
+    parts[[i]] <- d
+  }
+  if (!quiet) cli::cli_progress_done()
+
+  pts <- dplyr::bind_rows(parts)
+  if (nrow(pts) == 0L) stop("No GPS points found.", call. = FALSE)
+  n_raw <- sum(pts$n)
+  if (!is.null(grid_digits)) {
+    pts <- dplyr::count(pts, .data$lat, .data$lng, wt = .data$n, name = "n")
+  }
+
+  if (!is.null(max_points) && nrow(pts) > max_points) {
+    keep <- unique(round(seq(1, nrow(pts), length.out = max_points)))
+    pts <- pts[keep, ]
+  }
+
+  if (!quiet) {
+    cli::cli_alert_info(
+      "{n_raw} point{?s} in {length(files)} activit{?y/ies} \\u2192 {nrow(pts)} cell{?s}"
+    )
+  }
+
+  stage <- qs_stage()
+  data_file <- fs::path(stage$qmd, "heat_data.rds")
+  saveRDS(pts, data_file)
+
+  quarto::quarto_render(
+    input = as.character(fs::path(stage$qmd, "heat.qmd")),
+    output_file = "heatmap.html",
+    execute_params = list(data_path = as.character(fs::path_abs(data_file))),
+    quiet = !verbose
+  )
+  qs_collect(stage, out_dir)
+
+  out <- fs::path(out_dir, "heatmap.html")
+  if (!quiet) {
+    cli::cli_alert_success(
+      "Heat map written: {round(file.size(out) / 1024^2, 1)} MB ({elapsed(t0)})"
+    )
+  }
+  invisible(out)
+}
+
+
 #' Render the dashboard navigation index
 #'
 #' Writes `dashboard_qs/index.html`, a sidebar of every activity in the
@@ -365,6 +472,11 @@ qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
       file = "activity_list.html",
       title = "Activity list",
       subtitle = "Plain listing"
+    ),
+    list(
+      file = "heatmap.html",
+      title = "Heat map",
+      subtitle = "All routes"
     )
   )
   present <- Filter(function(p) file.exists(fs::path(out_dir, p$file)), page_specs)
@@ -426,6 +538,7 @@ qs_render_dashboard <- function(repo = here("strava_repo"),
   )
   qs_render_list(repo, verbose = verbose, quiet = quiet)
   qs_render_table(repo, verbose = verbose, quiet = quiet)
+  qs_render_heatmap(repo, verbose = verbose, quiet = quiet)
   qs_render_index(repo, quiet = quiet)
 }
 

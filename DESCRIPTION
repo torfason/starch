@@ -22,6 +22,7 @@ Suggests:
     jsonlite,
     knitr,
     leaflet,
+    leaflet.extras,
     plotly,
     readr,
     reactable,

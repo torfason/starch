@@ -1,0 +1,61 @@
+---
+title: "Heat map"
+page-layout: full
+params:
+  data_path: ""
+---
+
+```{r}
+#| output: false
+library(leaflet)
+library(leaflet.extras)
+
+# One row per grid cell, with n as the number of stream points that fell in it.
+d <- readRDS(params$data_path)
+
+# See detail.qmd for why this is not a single option: leaflet takes digits
+# through htmlwidgets' serializer, and at 7 significant digits a coordinate is
+# written with five decimals, which is the grid this data is already on.
+widget_digits <- function(w, digits = 7) {
+  if (is.null(attr(w$x, "TOJSON_FUNC", exact = TRUE))) {
+    attr(w$x, "TOJSON_ARGS") <- list(digits = digits)
+  } else {
+    attr(w$x, "TOJSON_FUNC") <- function(x, ...) {
+      jsonlite::toJSON(
+        x,
+        digits = digits, auto_unbox = TRUE, force = TRUE,
+        null = "null", na = "null",
+        time_format = "%Y-%m-%d %H:%M:%OS6", ...
+      )
+    }
+  }
+  w
+}
+```
+
+```{=html}
+<style>
+/* The widget is emitted with a fixed pixel height. Overriding it here rather
+   than at creation keeps the map filling whatever the frame gives it, which
+   is what the iframe in index.html hands over. */
+.html-widget.leaflet, .leaflet-container {
+  height: calc(100vh - 7rem) !important;
+  width: 100% !important;
+}
+</style>
+```
+
+```{r}
+leaflet(d) |>
+  addTiles(group = "OSM") |>
+  addProviderTiles("OpenTopoMap", group = "Topo") |>
+  addLayersControl(
+    baseGroups = c("OSM", "Topo"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) |>
+  addHeatmap(
+    lng = ~lng, lat = ~lat, intensity = ~n,
+    radius = 2, blur = 5, max = 0.05
+  ) |>
+  widget_digits()
+```
