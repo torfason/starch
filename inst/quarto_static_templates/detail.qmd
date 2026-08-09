@@ -161,8 +161,6 @@ heading <- paste(
 cat("# ", heading, "\n\n")
 ```
 
-[&larr; overview](index.html)
-
 ## Summary
 
 ```{r}

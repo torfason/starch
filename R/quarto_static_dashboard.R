@@ -42,6 +42,43 @@ qs_collect <- function(stage, out_dir) {
   invisible(fs::path(out_dir, rel))
 }
 
+# The index shell is plain HTML assembled by R, not a Quarto document, so it
+# lives outside the Quarto project directory.
+qs_read_shell <- function(name) {
+  path <- system.file("quarto_static_shell", name, package = "starch")
+  if (!nzchar(path)) {
+    stop("Could not locate ", name, " in the installed package.", call. = FALSE)
+  }
+  paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+}
+
+qs_fmt_pace <- function(min_per_km) {
+  if (!is.finite(min_per_km)) return("\u2014")
+  mins <- floor(min_per_km)
+  secs <- round((min_per_km - mins) * 60)
+  if (secs == 60L) {
+    mins <- mins + 1L
+    secs <- 0L
+  }
+  sprintf("%d:%02d", mins, secs)
+}
+
+qs_fmt_card_stats <- function(distance_km, elapsed_time_s, activity_type) {
+  vapply(seq_along(distance_km), function(i) {
+    dist <- distance_km[[i]]
+    secs <- elapsed_time_s[[i]]
+    dur <- qs_fmt_duration(secs)
+    if (!is.finite(dist) || dist == 0) return(dur)
+    out <- paste0(sprintf("%.1f km", dist), " \u00b7 ", dur)
+    foot <- !is.na(activity_type[[i]]) &&
+      activity_type[[i]] %in% c("Run", "Trail Run", "Walk", "Hike")
+    if (foot && is.finite(secs)) {
+      out <- paste0(out, " \u00b7 ", qs_fmt_pace((secs / 60) / dist), "/km")
+    }
+    out
+  }, character(1))
+}
+
 qs_fmt_duration <- function(s) {
   if (!is.finite(s)) return("\u2014")
   h <- floor(s / 3600)
@@ -147,21 +184,24 @@ qs_render_activities <- function(repo = here("strava_repo"),
 }
 
 
-#' Render the static dashboard index
+#' Render the plain activity list
 #'
-#' Writes `dashboard_qs/index.html`, a table of every activity in the manifest,
-#' linking to those that already have a page. The manifest is written to the
-#' staged project as `manifest.csv` and read back by `index.qmd`, so the
+#' Writes `dashboard_qs/activity_list.html`, a table of every activity in the
+#' manifest, linking to those that already have a page. The manifest is written
+#' to the staged project as `manifest.csv` and read back by `list.qmd`, so the
 #' template holds no knowledge of the repository layout.
+#'
+#' This is the simplest of the overview pages, kept alongside the filterable
+#' table so the two can be compared.
 #'
 #' @param repo Path to the Strava repository.
 #' @inheritParams qs_render_activities
 #'
 #' @return Path to the written page, invisibly.
 #' @export
-qs_render_index <- function(repo = here("strava_repo"),
-                            verbose = FALSE,
-                            quiet = FALSE) {
+qs_render_list <- function(repo = here("strava_repo"),
+                           verbose = FALSE,
+                           quiet = FALSE) {
   require_pkgs(c("readr", "quarto", "knitr"))
   require_quarto()
 
@@ -187,14 +227,15 @@ qs_render_index <- function(repo = here("strava_repo"),
   stage <- qs_stage()
   readr::write_csv(manifest, fs::path(stage$qmd, "manifest.csv"))
 
-  if (!quiet) cli::cli_alert_info("Rendering index ({nrow(manifest)} rows)")
+  if (!quiet) cli::cli_alert_info("Rendering list ({nrow(manifest)} rows)")
   quarto::quarto_render(
-    input = as.character(fs::path(stage$qmd, "index.qmd")),
+    input = as.character(fs::path(stage$qmd, "list.qmd")),
+    output_file = "activity_list.html",
     quiet = !verbose
   )
   qs_collect(stage, out_dir)
 
-  out <- fs::path(out_dir, "index.html")
+  out <- fs::path(out_dir, "activity_list.html")
   if (!quiet) cli::cli_alert_success("Wrote {.file {out}}")
   invisible(out)
 }
@@ -269,6 +310,100 @@ qs_render_table <- function(repo = here("strava_repo"),
 }
 
 
+#' Render the dashboard navigation index
+#'
+#' Writes `dashboard_qs/index.html`, a sidebar of every activity in the
+#' manifest over an iframe that shows the selected page. Overview pages are
+#' listed above the activities, and only those that exist are offered.
+#'
+#' The shell is assembled by R rather than rendered by Quarto, so adding an
+#' activity rebuilds one small file instead of re-rendering every page, which
+#' is what a Quarto-native sidebar would require.
+#'
+#' @param repo Path to the Strava repository.
+#' @param quiet Suppress progress reporting.
+#'
+#' @return Path to the written page, invisibly.
+#' @export
+qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
+  require_pkgs(c("glue", "htmltools"))
+
+  out_dir <- fs::path(repo, "dashboard_qs")
+  out <- fs::path(out_dir, "index.html")
+
+  acts <- load_activities_csv(repo)
+  has_page <- !is.na(acts$stem) &
+    file.exists(fs::path(out_dir, paste0(acts$stem, ".html")))
+  page_rel <- ifelse(is.na(acts$stem), NA_character_, paste0(acts$stem, ".html"))
+
+  cards <- glue::glue_data(
+    list(
+      id = htmltools::htmlEscape(acts$activity_id),
+      src = ifelse(has_page, page_rel, ""),
+      cls = ifelse(has_page, "card", "card nopage"),
+      date_str = format(acts$activity_date, "%Y-%m-%d"),
+      time_str = format(acts$activity_date, "%H:%M"),
+      name = htmltools::htmlEscape(acts$activity_name),
+      type = htmltools::htmlEscape(acts$activity_type),
+      stats = qs_fmt_card_stats(
+        acts$distance_km, acts$elapsed_time_s, acts$activity_type
+      )
+    ),
+    qs_read_shell("index_card.html"),
+    .open = "{{", .close = "}}"
+  ) |> paste(collapse = "\n")
+
+  # Overview pages, shown as cards above the activity list. Only those already
+  # rendered are offered, so a partial build still produces a working index.
+  page_specs <- list(
+    list(
+      file = "overview_table.html",
+      title = "All activities",
+      subtitle = "Filterable table"
+    ),
+    list(
+      file = "activity_list.html",
+      title = "Activity list",
+      subtitle = "Plain listing"
+    )
+  )
+  present <- Filter(function(p) file.exists(fs::path(out_dir, p$file)), page_specs)
+  pages_html <- if (length(present) == 0L) {
+    ""
+  } else {
+    card_tpl <- qs_read_shell("index_card_page.html")
+    paste(vapply(present, function(p) {
+      as.character(glue::glue(
+        card_tpl,
+        .open = "{{", .close = "}}",
+        src = p$file,
+        id = sub("[.]html$", "", p$file),
+        title = htmltools::htmlEscape(p$title),
+        subtitle = htmltools::htmlEscape(p$subtitle)
+      ))
+    }, character(1)), collapse = "\n")
+  }
+
+  page <- glue::glue(
+    qs_read_shell("index.html"),
+    .open = "{{", .close = "}}",
+    count = nrow(acts),
+    n_rendered = sum(has_page),
+    pages_html = pages_html,
+    cards_html = cards
+  )
+
+  fs::dir_create(out_dir)
+  writeLines(page, out)
+  if (!quiet) {
+    cli::cli_alert_success(
+      "Index written: {nrow(acts)} activit{?y/ies}, {sum(has_page)} with pages"
+    )
+  }
+  invisible(out)
+}
+
+
 #' Render the static Quarto dashboard
 #'
 #' Renders outstanding activity pages, then rebuilds the index so that it
@@ -289,8 +424,9 @@ qs_render_dashboard <- function(repo = here("strava_repo"),
     max_files = max_files, max_points = max_points,
     verbose = verbose, quiet = quiet
   )
+  qs_render_list(repo, verbose = verbose, quiet = quiet)
   qs_render_table(repo, verbose = verbose, quiet = quiet)
-  qs_render_index(repo, verbose = verbose, quiet = quiet)
+  qs_render_index(repo, quiet = quiet)
 }
 
 
