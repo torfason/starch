@@ -75,6 +75,13 @@ Source lives in `R/`:
   converts archived activities to one Parquet file each, rebuilding only
   what changed. The internal `content_check()` implements the staleness
   test.
+- `press.R` –
+  [`press()`](https://torfason.github.io/starch/reference/press.md), the
+  one-call maintenance run: import the export archive, convert to
+  Parquet, render the static dashboard, open it. Prompts before each
+  step with the step’s context, and takes every default as an argument
+  so the sequence can also run unattended with `confirm = FALSE`. Sits
+  above the stacks, so it is unprefixed.
 - `dashboard_common.R` – shared by every dashboard stack, and belonging
   to none of them.
   [`load_activities_csv()`](https://torfason.github.io/starch/reference/load_activities_csv.md)

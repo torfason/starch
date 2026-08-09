@@ -40,6 +40,8 @@ library(starch)
   : Locate the most recent Strava export archive
 - [`load_activities_csv()`](https://torfason.github.io/starch/reference/load_activities_csv.md)
   : Read the activity manifest from a Strava export
+- [`press()`](https://torfason.github.io/starch/reference/press.md) :
+  Run the maintenance sequence
 - [`qd_render_dashboard()`](https://torfason.github.io/starch/reference/qd_render_dashboard.md)
   : Render the Quarto dashboard
 - [`qd_view_dashboard()`](https://torfason.github.io/starch/reference/qd_view_dashboard.md)

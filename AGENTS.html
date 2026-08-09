@@ -66,6 +66,8 @@
 <li>
 <code>activities_parquet.R</code> – <code><a href="reference/strava_activities_to_parquet.html">strava_activities_to_parquet()</a></code> converts archived activities to one Parquet file each, rebuilding only what changed. The internal <code>content_check()</code> implements the staleness test.</li>
 <li>
+<code>press.R</code> – <code><a href="reference/press.html">press()</a></code>, the one-call maintenance run: import the export archive, convert to Parquet, render the static dashboard, open it. Prompts before each step with the step’s context, and takes every default as an argument so the sequence can also run unattended with <code>confirm = FALSE</code>. Sits above the stacks, so it is unprefixed.</li>
+<li>
 <code>dashboard_common.R</code> – shared by every dashboard stack, and belonging to none of them. <code><a href="reference/load_activities_csv.html">load_activities_csv()</a></code> reads the export manifest, <code>parquet_stream_stats()</code> reads per-activity statistics out of the Parquet footers, and <code>require_pkgs()</code> checks the render-time Suggests. Nothing here is prefixed, and nothing here may depend on a particular stack.</li>
 <li>
 <code>rmd_dashboard.R</code> – the Rmd dashboard. <code><a href="reference/rmd_render_dashboard.html">rmd_render_dashboard()</a></code> renders one flexdashboard page per activity into <code>strava_repo/dashboard_rmd/</code>, plus a reactable overview table and a static index. Templates in <code>inst/rmd_templates/</code>.</li>
