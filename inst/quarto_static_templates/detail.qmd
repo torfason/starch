@@ -166,17 +166,34 @@ cat("# ", heading, "\n\n")
 ## Summary
 
 ```{r}
+# Raw HTML rather than a markdown link, because target is needed: this page is
+# displayed inside the index's iframe and Strava sets X-Frame-Options, so an
+# in-frame navigation would land on a blank pane. format = "pipe" leaves inline
+# HTML alone for pandoc to pass through.
+strava_cell <- if (is.null(params$activity_id) || is.na(params$activity_id) ||
+  !nzchar(params$activity_id)) {
+  "\u2014"
+} else {
+  sprintf(
+    '<a href="https://www.strava.com/activities/%s" target="_blank" rel="noopener">%s</a>',
+    params$activity_id, params$activity_id
+  )
+}
+
 tibble::tibble(
-  Metric = c("Distance", "Duration", "Avg pace", "Avg HR", "Elev gain"),
+  Metric = c(
+    "Distance", "Duration", "Avg pace", "Avg HR", "Elev gain", "Strava"
+  ),
   Value = c(
     if (is.finite(total_dist_km)) sprintf("%.2f km", total_dist_km) else "\u2014",
     fmt_duration(total_time_s),
     if (is.finite(avg_pace_mpk)) paste0(fmt_pace(avg_pace_mpk), " /km") else "\u2014",
     if (has_hr) sprintf("%.0f bpm", avg_hr) else "\u2014",
-    if (has_alt) sprintf("%.0f m", elev_gain_m) else "\u2014"
+    if (has_alt) sprintf("%.0f m", elev_gain_m) else "\u2014",
+    strava_cell
   )
 ) |>
-  knitr::kable()
+  knitr::kable(format = "pipe")
 ```
 
 ## Route
