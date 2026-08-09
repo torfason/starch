@@ -5,6 +5,8 @@ params:
   data_path: ""
 ---
 
+[Training log on Strava](https://www.strava.com/athlete/training){target="_blank" rel="noopener"}
+
 ```{r}
 #| output: false
 library(reactable)
