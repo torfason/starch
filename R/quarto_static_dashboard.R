@@ -135,7 +135,7 @@ qs_render_activities <- function(repo = here("strava_repo"),
 
   if (!quiet) {
     cli::cli_alert_info(
-      "Rendering {.file activities/} ({n} of {nrow(todo)} awaiting a page)"
+      "Rendering {.strong activities/} ({n} of {nrow(todo)} awaiting)"
     )
   }
   if (n == 0L) {
@@ -148,10 +148,7 @@ qs_render_activities <- function(repo = here("strava_repo"),
   cur_name <- ""
   if (!quiet) {
     cli::cli_progress_bar(
-      format = paste0(
-        "{cli::pb_bar} {cli::pb_current}/{cli::pb_total} ",
-        "{.file {cur_name}} | {cli::pb_eta}"
-      ),
+      format = bar_format("{.file {cur_name}}"),
       total = n, clear = FALSE
     )
   }
@@ -178,7 +175,9 @@ qs_render_activities <- function(repo = here("strava_repo"),
 
   if (!quiet) {
     cli::cli_progress_done()
-    cli::cli_alert_success("Rendered {n} page{?s} ({elapsed(t0)})")
+    cli::cli_alert_success(
+      "Wrote {.strong activities/} ({n} page{?s}, {elapsed(t0)})"
+    )
   }
   invisible(todo)
 }
@@ -224,12 +223,13 @@ qs_render_overview_list <- function(repo = here("strava_repo"),
     href = href
   )
 
+  t0 <- Sys.time()
   stage <- qs_stage()
   readr::write_csv(manifest, fs::path(stage$qmd, "manifest.csv"))
 
   if (!quiet) {
     cli::cli_alert_info(
-      "Rendering {.file overview_list.html} ({nrow(manifest)} row{?s})"
+      "Rendering {.strong overview_list.html} ({nrow(manifest)} row{?s})"
     )
   }
   quarto::quarto_render(
@@ -240,7 +240,9 @@ qs_render_overview_list <- function(repo = here("strava_repo"),
   qs_collect(stage, out_dir)
 
   out <- fs::path(out_dir, "overview_list.html")
-  if (!quiet) cli::cli_alert_success("Wrote {.file {out}}")
+  if (!quiet) {
+    cli::cli_alert_success("Wrote {.strong overview_list.html} ({elapsed(t0)})")
+  }
   invisible(out)
 }
 
@@ -281,7 +283,7 @@ qs_render_overview_table <- function(repo = here("strava_repo"),
   have_pq <- !is.na(acts$parquet) & file.exists(acts$parquet)
   if (!quiet) {
     cli::cli_alert_info(
-      "Rendering {.file overview_table.html} ({nrow(acts)} row{?s})"
+      "Rendering {.strong overview_table.html} ({nrow(acts)} row{?s})"
     )
     cli::cli_alert_info(
       "Reading statistics for {sum(have_pq)} of {nrow(acts)} activit{?y/ies}"
@@ -310,7 +312,7 @@ qs_render_overview_table <- function(repo = here("strava_repo"),
   out <- fs::path(out_dir, "overview_table.html")
   if (!quiet) {
     cli::cli_alert_success(
-      "Overview table written: {nrow(tbl)} row{?s} ({elapsed(t0)})"
+      "Wrote {.strong overview_table.html} ({nrow(tbl)} rows, {elapsed(t0)})"
     )
   }
   invisible(out)
@@ -365,9 +367,12 @@ qs_render_overview_heatmap <- function(repo = here("strava_repo"),
   t0 <- Sys.time()
   if (!quiet) {
     cli::cli_alert_info(
-      "Rendering {.file overview_heatmap.html} ({length(files)} activit{?y/ies})"
+      "Rendering {.strong overview_heatmap.html} ({length(files)} activities)"
     )
-    cli::cli_progress_bar("Reading streams", total = length(files))
+    cli::cli_progress_bar(
+      format = bar_format("reading streams"),
+      total = length(files), clear = FALSE
+    )
   }
   parts <- vector("list", length(files))
   for (i in seq_along(files)) {
@@ -400,28 +405,42 @@ qs_render_overview_heatmap <- function(repo = here("strava_repo"),
   }
 
   if (!quiet) {
+    # Two short messages rather than one long one: cli wraps at the console
+    # width, which is where the stray line break came from. cli::qty() carries
+    # the quantity for the plural that follows it, which a formatted string
+    # cannot do on its own.
+    n_cells <- nrow(pts)
+    pts_str <- prettyNum(n_raw, big.mark = ",")
+    cells_str <- prettyNum(n_cells, big.mark = ",")
     cli::cli_alert_info(
-      "{format(n_raw, big.mark = ',')} point{?s} in {length(files)} \
-       activit{?y/ies} \u2192 {format(nrow(pts), big.mark = ',')} cell{?s}"
+      "{cli::qty(n_raw)}{pts_str} point{?s} in {length(files)} activities"
     )
+    cli::cli_alert_info("{cli::qty(n_cells)}{cells_str} grid cell{?s} on page")
   }
 
   stage <- qs_stage()
   data_file <- fs::path(stage$qmd, "heat_data.rds")
   saveRDS(pts, data_file)
 
+  # No bar for this phase: neither Quarto nor leaflet reports progress, and
+  # serializing a million cells into the page is most of the wait. A step at
+  # least says which phase is running. Skipped under verbose, where the CLI's
+  # own output would fight with the spinner.
+  if (!quiet && !verbose) cli::cli_progress_step("Rendering page with Quarto")
   quarto::quarto_render(
     input = as.character(fs::path(stage$qmd, "overview_heatmap.qmd")),
     output_file = "overview_heatmap.html",
     execute_params = list(data_path = as.character(fs::path_abs(data_file))),
     quiet = !verbose
   )
+  if (!quiet && !verbose) cli::cli_progress_done()
   qs_collect(stage, out_dir)
 
   out <- fs::path(out_dir, "overview_heatmap.html")
   if (!quiet) {
+    mb <- round(file.size(out) / 1024^2, 1)
     cli::cli_alert_success(
-      "Heat map written: {round(file.size(out) / 1024^2, 1)} MB ({elapsed(t0)})"
+      "Wrote {.strong overview_heatmap.html} ({mb} MB, {elapsed(t0)})"
     )
   }
   invisible(out)
@@ -449,7 +468,7 @@ qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
   out_dir <- fs::path(repo, "dashboard_qs")
   out <- fs::path(out_dir, "index.html")
 
-  if (!quiet) cli::cli_alert_info("Rendering {.file index.html}")
+  if (!quiet) cli::cli_alert_info("Rendering {.strong index.html}")
 
   acts <- load_activities_csv(repo)
   has_page <- !is.na(acts$stem) &
@@ -524,8 +543,9 @@ qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
   fs::dir_create(out_dir)
   writeLines(page, out)
   if (!quiet) {
+    n_pages <- sum(has_page)
     cli::cli_alert_success(
-      "Index written: {nrow(acts)} activit{?y/ies}, {sum(has_page)} with pages"
+      "Wrote {.strong index.html} ({nrow(acts)} activities, {n_pages} linked)"
     )
   }
   invisible(out)

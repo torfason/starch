@@ -16,6 +16,16 @@ require_pkgs <- function(pkgs) {
 # standalone Quarto binary that is installed separately and is frequently
 # absent, in which case the failure surfaces from inside quarto_render() as an
 # opaque "Error running quarto CLI from R".
+# One progress-bar format for the whole package. cli's default puts the label
+# first, so the bar starts in a different column depending on the label's
+# length; this keeps it flush left whatever is being counted.
+bar_format <- function(label) {
+  paste0(
+    "{cli::pb_bar} {cli::pb_current}/{cli::pb_total} ", label,
+    " | {cli::pb_eta}"
+  )
+}
+
 require_quarto <- function() {
   ok <- tryCatch(!is.null(quarto::quarto_version()), error = function(e) FALSE)
   if (!isTRUE(ok)) {
@@ -178,7 +188,8 @@ parquet_stream_stats <- function(paths, quiet = FALSE) {
   rows <- vector("list", length(paths))
   if (!quiet) {
     cli::cli_progress_bar(
-      "Reading stream statistics", total = length(paths), clear = FALSE
+      format = bar_format("reading stream statistics"),
+      total = length(paths), clear = FALSE
     )
   }
   for (i in seq_along(paths)) {

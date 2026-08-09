@@ -43,9 +43,9 @@ dash_render <- function(repo = here("strava_repo"),
     qs_render_overview_heatmap(repo, verbose = verbose, quiet = quiet)
   } else if (!quiet) {
     cli::cli_alert_info(
-      "Skipping {.file overview_heatmap.html} \\
-       (exists; pass {.code update_heatmap = TRUE} to rebuild)"
+      "Skipping {.strong overview_heatmap.html} (already built)"
     )
+    cli::cli_alert_info("Pass {.code update_heatmap = TRUE} to rebuild it")
   }
 
   qs_render_index(repo, quiet = quiet)

@@ -94,10 +94,9 @@ press <- function(repo = here("strava_repo"),
     cli::cli_alert_warning("No export archive found; skipping import")
   } else {
     cli::cli_alert_info("Archive {.path {zip_path}}")
-    cli::cli_alert_info(
-      "{round(file.size(zip_path) / 1024^2, 1)} MB, dated \\
-       {format(file.mtime(zip_path), '%Y-%m-%d %H:%M')}"
-    )
+    mb <- round(file.size(zip_path) / 1024^2, 1)
+    dated <- format(file.mtime(zip_path), "%Y-%m-%d %H:%M")
+    cli::cli_alert_info("{mb} MB, dated {dated}")
     ans <- if (confirm) {
       press_ask("Import into the repository?", c("yes", "skip", "abort"), "yes")
     } else {
@@ -145,14 +144,11 @@ press <- function(repo = here("strava_repo"),
   has_page <- file.exists(
     fs::path(repo, "dashboard_qs", "activities", paste0(acts$stem, ".html"))
   )
-  cli::cli_alert_info(
-    "{sum(has_pq & !has_page)} activit{?y/ies} awaiting a page, \\
-     {sum(has_page)} already rendered"
-  )
-  cli::cli_alert_info(
-    "Overview pages and the index are rebuilt either way; the heat map \
-     {ifelse(update_heatmap, 'is rebuilt too', 'is not')}"
-  )
+  n_todo <- sum(has_pq & !has_page)
+  n_done <- sum(has_page)
+  cli::cli_alert_info("{n_todo} awaiting a page, {n_done} already rendered")
+  heat <- if (update_heatmap) "rebuilt too" else "left alone"
+  cli::cli_alert_info("Overview pages and index rebuilt; heat map {heat}")
   n <- if (confirm) {
     press_ask_count("How many pages to render?", max_pages)
   } else {

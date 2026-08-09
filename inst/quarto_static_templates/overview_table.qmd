@@ -71,17 +71,24 @@ reactable(
   pageSizeOptions = c(25, 50, 100, 250),
   defaultPageSize = 25,
   defaultSorted = list(activity_date = "desc"),
-  defaultColDef = colDef(headerStyle = list(fontSize = "0.8rem")),
+  # Smaller than the page's body text: this table is 30 columns wide and is
+  # read by scanning, not by reading.
+  defaultColDef = colDef(
+    headerStyle = list(fontSize = "0.75rem"),
+    style = list(fontSize = "0.8rem")
+  ),
   columns = list(
     activity_date = colDef(
-      name = "Date", width = 135,
-      cell = function(v) if (is.na(v)) "\u2014" else format(v, "%Y-%m-%d %H:%M")
+      # Date only. The time was clipped by the column anyway, and sorting is
+      # on the underlying value, which keeps its time.
+      name = "Date", width = 110,
+      cell = function(v) if (is.na(v)) "\u2014" else format(v, "%Y-%m-%d")
     ),
     # The id is the natural handle for the Strava link. target="_blank" is
     # required: this page is displayed inside the index's iframe, and Strava
     # sets X-Frame-Options, so an in-frame navigation would just fail blank.
     activity_id = colDef(
-      name = "Strava", width = 110,
+      name = "Strava", width = 125,
       cell = function(v) {
         if (is.na(v) || !nzchar(v)) return("\u2014")
         tags$a(href = paste0("https://www.strava.com/activities/", v),

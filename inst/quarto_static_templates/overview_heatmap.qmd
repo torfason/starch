@@ -39,13 +39,13 @@ widget_digits <- function(w, digits = 7) {
    than at creation keeps the map filling whatever the frame gives it, which
    is what the iframe in index.html hands over. */
 .html-widget.leaflet, .leaflet-container {
-  height: calc(100vh - 5rem) !important;
+  height: calc(100vh - 7rem) !important;
   width: 100% !important;
 }
 </style>
 ```
 
-:::: {.column-screen}
+:::: {.column-screen-inset}
 
 ```{r}
 leaflet(d) |>
