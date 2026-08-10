@@ -25,21 +25,21 @@ fmt_duration <- function(s) {
   )
 }
 
-num_col <- function(name, digits = 1, width = 90) {
+num_col <- function(name, digits = 1, width = 80) {
   colDef(
     name = name, width = width, filterable = FALSE,
     cell = function(v) if (is.na(v)) "\u2014" else formatC(v, format = "f", digits = digits, big.mark = " ")
   )
 }
 
-int_col <- function(name, width = 85) {
+int_col <- function(name, width = 75) {
   colDef(
     name = name, width = width, filterable = FALSE,
     cell = function(v) if (is.na(v)) "\u2014" else format(round(v), big.mark = " ")
   )
 }
 
-dur_col <- function(name, width = 95) {
+dur_col <- function(name, width = 85) {
   colDef(
     name = name, width = width, filterable = FALSE,
     cell = function(v) fmt_duration(v)
@@ -99,7 +99,7 @@ reactable(
     # the top frame, so target="_top" makes this a fragment navigation that the
     # index's hashchange handler picks up, rather than a page reload.
     activity_name = colDef(
-      name = "Name", minWidth = 220,
+      name = "Name", minWidth = 265,
       cell = function(v, index) {
         label <- if (is.na(v) || !nzchar(v)) "(unnamed)" else v
         if (isTRUE(d$has_page[index])) {
@@ -110,7 +110,7 @@ reactable(
         }
       }
     ),
-    activity_type = colDef(name = "Type", width = 110),
+    activity_type = colDef(name = "Type", width = 100),
     distance_km = num_col("Dist (km)", 2),
     elapsed_time_s = dur_col("Elapsed"),
     moving_time_s = dur_col("Moving"),
@@ -125,8 +125,8 @@ reactable(
     calories = int_col("kcal"),
     relative_effort = int_col("Effort"),
     perceived_exertion = int_col("RPE"),
-    activity_gear = colDef(name = "Gear", width = 130),
-    commute = colDef(name = "Commute", width = 100),
+    activity_gear = colDef(name = "Gear", width = 115),
+    commute = colDef(name = "Commute", width = 85),
     n_rows = int_col("Points"),
     n_rows_gps = int_col("GPS"),
     n_rows_dist = int_col("Dist pts"),
@@ -135,7 +135,7 @@ reactable(
     n_rows_alt = int_col("Alt pts"),
     n_rows_cad = int_col("Cad pts"),
     n_rows_watts = int_col("Watt pts"),
-    stream_columns = colDef(name = "Stream columns", minWidth = 260),
+    stream_columns = colDef(name = "Stream columns", minWidth = 240),
     stem = colDef(name = "File", width = 130, show = FALSE)
   )
 )
