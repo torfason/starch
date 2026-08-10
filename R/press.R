@@ -33,7 +33,7 @@ press_ask_count <- function(prompt, default) {
 }
 
 press_aborted <- function() {
-  cli::cli_alert_warning("Aborted; nothing further was run")
+  cli::cli_alert_info("Aborted; nothing further was run")
   invisible(NULL)
 }
 
@@ -82,6 +82,7 @@ press <- function(repo = here("strava_repo"),
     )
   }
 
+  t_all <- Sys.time()
   cli::cli_h1("starch maintenance")
   cli::cli_alert_info("Repository {.path {repo}}")
 
@@ -168,6 +169,6 @@ press <- function(repo = here("strava_repo"),
     if (ans == "yes") dash_view(repo)
   }
 
-  cli::cli_alert_success("Done")
+  cli::cli_alert_success("Done! ({elapsed(t_all)})")
   invisible(repo)
 }

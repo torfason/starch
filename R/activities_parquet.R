@@ -114,18 +114,18 @@ activity_streams_to_parquet <- function(repo = here("strava_repo"),
   checked <- content_check(infiles, outfiles, hash_dir = hash_dir)
   stale <- checked[checked$stale, ]
   if (!quiet) {
-    cli::cli_alert_success(
+    cli::cli_alert_info(
       "{nrow(stale)} stale, {nrow(checked) - nrow(stale)} up to date ({elapsed(t0)})"
     )
   }
   if (nrow(stale) == 0L) {
-    if (!quiet) cli::cli_alert_success("Nothing to convert ({elapsed(t_all)})")
+    if (!quiet) cli::cli_alert_info("Nothing to convert ({elapsed(t_all)})")
     return(invisible(tibble::tibble()))
   }
 
   n <- min(max_files, nrow(stale))
   if (!quiet && n < nrow(stale)) {
-    cli::cli_alert_warning(
+    cli::cli_alert_info(
       "Converting the first {n} of {nrow(stale)} stale file{?s} (max_files = {max_files})"
     )
   }
@@ -206,7 +206,7 @@ activity_streams_to_parquet <- function(repo = here("strava_repo"),
   if (!quiet) {
     cli::cli_progress_done()
     cli::cli_alert_success("Converted {n} file{?s} ({elapsed(t0)})")
-    cli::cli_alert_success("Done ({elapsed(t_all)})")
+    cli::cli_alert_success("Done! ({elapsed(t_all)})")
   }
   invisible(dplyr::bind_rows(log))
 }

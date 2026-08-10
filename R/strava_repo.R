@@ -177,7 +177,7 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
         call. = FALSE
       )
     }
-    if (!quiet) cli::cli_alert_success("Working tree clean ({elapsed(t0)})")
+    if (!quiet) cli::cli_alert_info("Working tree clean ({elapsed(t0)})")
   }
 
   # Fail now rather than after a full extraction if the commit could not be made.
@@ -237,7 +237,7 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
   t0 <- Sys.time()
   status <- gert::git_status(repo = repo)
   if (!quiet) {
-    cli::cli_alert_success("{nrow(status)} change{?s} found ({elapsed(t0)})")
+    cli::cli_alert_info("{nrow(status)} change{?s} found ({elapsed(t0)})")
   }
   if (nrow(status) == 0L) {
     if (!quiet) cli::cli_alert_info("Nothing to commit; import complete")
@@ -266,6 +266,6 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
       "Left uncommitted; the next import will refuse to run until this is resolved"
     )
   }
-  if (!quiet) cli::cli_alert_success("Import complete ({elapsed(t_all)})")
+  if (!quiet) cli::cli_alert_success("Done! ({elapsed(t_all)})")
   invisible(status)
 }

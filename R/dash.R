@@ -28,6 +28,7 @@ dash_render <- function(repo = here("strava_repo"),
                         update_heatmap = FALSE,
                         verbose = FALSE,
                         quiet = FALSE) {
+  t0 <- Sys.time()
   if (!quiet) cli::cli_h1("Rendering dashboard")
 
   qs_render_activities(
@@ -42,13 +43,13 @@ dash_render <- function(repo = here("strava_repo"),
   if (update_heatmap || !file.exists(heatmap)) {
     qs_render_overview_heatmap(repo, verbose = verbose, quiet = quiet)
   } else if (!quiet) {
-    cli::cli_alert_info(
-      "Skipping {.strong overview_heatmap.html} (already built)"
-    )
+    alert_render("Existing overview_heatmap.html found, skipping rerender")
     cli::cli_alert_info("Pass {.code update_heatmap = TRUE} to rebuild it")
   }
 
-  qs_render_index(repo, quiet = quiet)
+  out <- qs_render_index(repo, quiet = quiet)
+  if (!quiet) cli::cli_alert_success("Done! ({elapsed(t0)})")
+  invisible(out)
 }
 
 

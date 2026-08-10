@@ -19,6 +19,14 @@ require_pkgs <- function(pkgs) {
 # One progress-bar format for the whole package. cli's default puts the label
 # first, so the bar starts in a different column depending on the label's
 # length; this keeps it flush left whatever is being counted.
+# The line that announces a page is bold across its whole width, so that the
+# detail lines under it read as a group. Composed as a plain string first:
+# cli's inline markup styles a span, and a span cannot contain the
+# substitutions, so the interpolation happens before the styling.
+alert_render <- function(msg) {
+  cli::cli_alert_info("{.strong {msg}}")
+}
+
 bar_format <- function(label) {
   paste0(
     "{cli::pb_bar} {cli::pb_current}/{cli::pb_total} ", label,
