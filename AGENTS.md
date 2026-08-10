@@ -287,6 +287,20 @@ to `gzip -n`) and won’t produce spurious git diffs.
   and `skip_if_not_installed("FITfileR")` in tests.
 - **Prose style.** Use en dashes (–), not em dashes (—), in comments and
   docs.
+- **One meaning per cli symbol.** A check mark means an artefact now
+  exists on disk, and carries a timing:
+  `Wrote overview_table.html (1093 rows, 6.2s)`,
+  `Committed a1b2c3d4e5 (0.4s)`, and the `Done! (elapsed)` that closes
+  each top-level function. An info mark covers everything observational
+  – what is about to run, what was found, counts, and phases that
+  produce no usable output on their own. A warning is for genuine
+  surprises only: a malformed file, a missing archive, an uncommitted
+  tree. Anything the caller asked for is not a warning, so skipping the
+  heat map, capping with `max_files`, and aborting
+  [`press()`](https://torfason.github.io/starch/reference/press.md) are
+  all info. The line that announces a page is bold across its full
+  width, via `alert_render()`, so the detail lines under it read as a
+  group.
 - **Long-running functions report progress.** Anything that moves
   thousands of files
   ([`strava_zip_to_repo()`](https://torfason.github.io/starch/reference/strava_zip_to_repo.md),
