@@ -132,6 +132,15 @@ Source lives in `R/`:
     strava_zips/*.zip  --strava_zip_to_repo()-->  strava_repo/
     strava_repo/activities/  --activity_streams_to_parquet()-->  strava_repo/activities_parquet/
 
+Both
+[`activity_streams_to_parquet()`](https://torfason.github.io/starch/reference/activity_streams_to_parquet.md)
+and the dashboard’s activity renderer work **newest first**, because
+both cap their work with `max_files`. A capped run should therefore
+leave the most recent activities complete, and a fresh
+[`press()`](https://torfason.github.io/starch/reference/press.md) should
+reach a usable dashboard for what happened yesterday rather than for
+2013.
+
 The repository holds the export verbatim under version control: every
 import extracts the whole archive and overwrites, because activities can
 be edited in Strava after the fact, so a file’s presence says nothing
