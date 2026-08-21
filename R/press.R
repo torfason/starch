@@ -111,19 +111,15 @@ press <- function(repo = here("strava_repo"),
 
   ## Convert -----------------------------------------------------------------
   cli::cli_h2("Convert activities to Parquet")
-  # list.files() rather than fs::dir_ls(): a repository that has not been
-  # imported into yet has neither directory, and this is a summary line, not a
-  # reason to stop before the prompt.
-  n_streams <- length(list.files(
-    fs::path(repo, "activities"),
-    pattern = stream_file_regexp, ignore.case = TRUE
-  ))
-  n_parquet <- length(list.files(
-    fs::path(repo, "activities_parquet"),
-    pattern = "[.]parquet$", ignore.case = TRUE
-  ))
+  # The same check the conversion itself runs, rather than a directory count.
+  # Counting files on disk says how many Parquet files exist, not how many are
+  # current, so it reported everything as converted while a thousand activities
+  # were waiting to be rebuilt. Running it twice costs a fraction of a second.
+  pq_check <- parquet_staleness(repo)
+  n_streams <- nrow(pq_check)
+  n_stale <- sum(pq_check$stale)
   cli::cli_alert_info(
-    "{n_streams} stream file{?s}, {n_parquet} already converted"
+    "{n_streams} stream file{?s}, {n_stale} stale, {n_streams - n_stale} up to date"
   )
   n <- if (confirm) {
     press_ask_count("How many to convert?", max_parquet)

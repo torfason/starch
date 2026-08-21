@@ -14,7 +14,9 @@ activity_streams_to_parquet(
 \item{repo}{Path to the Strava repository, as produced by
 \code{\link[=strava_zip_to_repo]{strava_zip_to_repo()}}.}
 
-\item{max_files}{Maximum number of stale activities to convert in one call.}
+\item{max_files}{Maximum number of stale activities to convert in one call.
+Activities are taken newest first, so a run that hits the cap leaves the
+most recent ones converted and the backlog for the next call.}
 
 \item{quiet}{Suppress progress reporting.}
 }
@@ -31,11 +33,11 @@ rebuilt.
 
 Every import performed by \code{\link[=strava_zip_to_repo]{strava_zip_to_repo()}} rewrites the whole archive,
 so file modification times say nothing about whether an activity actually
-changed. Instead, each input's content hash is recorded as an empty marker
-file in \verb{activities_hashes/}, named for the hash and stamped with the time
-that content was first seen. An activity is rebuilt when its Parquet output
-is older than that marker, which happens only when the bytes genuinely
-differ.
+changed. Instead, each Parquet file gets a sidecar at
+\verb{hashes/parquet/<stem>.dcf} recording the hash of the stream it was built
+from, written once the Parquet file is safely on disk. An activity is
+rebuilt when the Parquet file is absent, the sidecar is absent, or the
+stream now hashes differently.
 
 Hashing is \code{rlang::hash_file()}, which is XXH128 rather than md5 and is by
 a wide margin the fastest of the file hashers available. The hash value is
@@ -43,7 +45,7 @@ not the point - only whether it changed - so the algorithm is free to
 change, at the cost of one full rebuild when it does.
 
 Note that the hash covers the compressed file, so recompressing the archive
-on a different machine invalidates every marker at once and forces a full
+on a different machine invalidates every sidecar at once and forces a full
 rebuild.
 }
 

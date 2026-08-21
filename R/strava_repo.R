@@ -10,6 +10,7 @@ elapsed <- function(t0) {
 strava_repo_ignore <- c(
   "activities_parquet/",
   "activities_hashes/",
+  "hashes/",
   "dashboard_rmd/",
   "dashboard_qd/",
   "dashboard_qs/"

@@ -1,44 +1,50 @@
 # Stream files the readers can dispatch on, optionally gzipped.
 stream_file_regexp <- "[.](fit|gpx|tcx)([.]gz)?$"
 
-# Content-based staleness check.
+# The Parquet stage's staleness check, on its own so that press() can report
+# the same numbers before prompting as the conversion will act on. Hashing a
+# thousand stream files takes a fraction of a second, which is cheaper than
+# threading the result between them.
 #
-# Each input file gets a marker file in `hash_dir` whose *name* is the content
-# hash of the input and whose *mtime* is when that content was first seen.
-# Staleness is then outfile-against-marker rather than outfile-against-input,
-# so a file rewritten byte-identically - which every Strava re-import does to
-# the whole archive - does not trigger a rebuild. `semistale` carries the plain
-# mtime comparison alongside, for comparison.
-#
-# A file whose conversion failed keeps an old (or absent) outfile against a
-# fresh marker, so it stays stale and is retried on the next run.
-content_check <- function(infiles, outfiles, hash_dir) {
-  unreadable <- !fs::file_exists(infiles)
-  if (any(unreadable)) {
-    stop("Could not hash ", sum(unreadable), " input file(s).", call. = FALSE)
-  }
-  hashes <- rlang::hash_file(infiles)
-  hashfiles <- fs::path(hash_dir, hashes)
-  hashwrite <- !fs::file_exists(hashfiles)
-  fs::dir_create(hash_dir)
-  fs::file_create(hashfiles[hashwrite])
+# Newest first, and that is deliberate: the caller truncates the stale set with
+# `max_files`, so a partial run should leave the most recent activities
+# converted. Strava activity ids increase with time, so the numeric stem sorts
+# as the activity date does; non-numeric stems (there should be none) sort last
+# either way.
+parquet_staleness <- function(repo) {
+  act_dir <- fs::path(repo, "activities")
+  pq_dir <- fs::path(repo, "activities_parquet")
 
-  mtime <- function(files) {
-    fs::file_info(files)$modification_time |> dplyr::coalesce(.POSIXct(-Inf))
+  infiles <- if (fs::dir_exists(act_dir)) {
+    fs::dir_ls(
+      act_dir, type = "file", regexp = stream_file_regexp, ignore.case = TRUE
+    )
+  } else {
+    fs::path(character(0))
   }
-  infile_mtime <- mtime(infiles)
-  outfile_mtime <- mtime(outfiles)
-  hashfile_mtime <- mtime(hashfiles)
 
-  tibble::tibble(
-    stale = (outfile_mtime < hashfile_mtime),
-    semistale = (outfile_mtime < infile_mtime),
-    hashwrite = hashwrite,
-    infile_mtime, outfile_mtime, hashfile_mtime,
-    infile = infiles,
-    outfile = outfiles,
-    hashfile = hashfiles
+  # paste0() treats a zero-length vector as "", so an empty repository would
+  # otherwise produce a single bogus ".parquet" entry.
+  if (length(infiles) == 0L) {
+    out <- empty_staleness("stream")
+    out$infile <- fs::path(character(0))
+    return(out)
+  }
+
+  stems <- sub("[.].*$", "", fs::path_file(infiles))
+  ids <- suppressWarnings(as.numeric(stems))
+  ord <- order(ids, stems, na.last = TRUE, decreasing = TRUE)
+  infiles <- infiles[ord]
+  stems <- stems[ord]
+
+  checked <- hash_check(
+    keys = stems,
+    outfiles = fs::path(pq_dir, paste0(stems, ".parquet")),
+    hashfiles = hash_path(repo, "parquet", stems),
+    current = tibble::tibble(stream = rlang::hash_file(infiles))
   )
+  checked$infile <- infiles
+  checked
 }
 
 #' Convert repository activities to Parquet
@@ -51,11 +57,11 @@ content_check <- function(infiles, outfiles, hash_dir) {
 #' @section Staleness:
 #' Every import performed by [strava_zip_to_repo()] rewrites the whole archive,
 #' so file modification times say nothing about whether an activity actually
-#' changed. Instead, each input's content hash is recorded as an empty marker
-#' file in `activities_hashes/`, named for the hash and stamped with the time
-#' that content was first seen. An activity is rebuilt when its Parquet output
-#' is older than that marker, which happens only when the bytes genuinely
-#' differ.
+#' changed. Instead, each Parquet file gets a sidecar at
+#' `hashes/parquet/<stem>.dcf` recording the hash of the stream it was built
+#' from, written once the Parquet file is safely on disk. An activity is
+#' rebuilt when the Parquet file is absent, the sidecar is absent, or the
+#' stream now hashes differently.
 #'
 #' Hashing is `rlang::hash_file()`, which is XXH128 rather than md5 and is by
 #' a wide margin the fastest of the file hashers available. The hash value is
@@ -63,7 +69,7 @@ content_check <- function(infiles, outfiles, hash_dir) {
 #' change, at the cost of one full rebuild when it does.
 #'
 #' Note that the hash covers the compressed file, so recompressing the archive
-#' on a different machine invalidates every marker at once and forces a full
+#' on a different machine invalidates every sidecar at once and forces a full
 #' rebuild.
 #'
 #' @section Failures:
@@ -89,7 +95,6 @@ activity_streams_to_parquet <- function(repo = here("strava_repo"),
   t_all <- Sys.time()
 
   act_dir <- fs::path(repo, "activities")
-  hash_dir <- fs::path(repo, "activities_hashes")
   pq_dir <- fs::path(repo, "activities_parquet")
 
   if (!fs::dir_exists(act_dir)) {
@@ -100,37 +105,21 @@ activity_streams_to_parquet <- function(repo = here("strava_repo"),
     cli::cli_alert_info("Repository {.path {repo}}")
   }
 
-  ## Enumerate supported stream files, newest first --------------------------
-  # Strava activity ids increase with time, so the numeric stem sorts as the
-  # activity date does. Descending order matters because `max_files` truncates
-  # the stale set: a partial run should leave the most recent activities
-  # converted, since those are the ones the dashboard is opened to look at.
-  # Stems that are not numeric (there should be none) sort last either way.
-  infiles <- fs::dir_ls(
-    act_dir, type = "file", regexp = stream_file_regexp, ignore.case = TRUE
-  )
-  if (length(infiles) == 0L) {
+  ## Decide what needs rebuilding, newest first ------------------------------
+  if (!quiet) cli::cli_alert_info("Hashing and checking staleness ...")
+  t0 <- Sys.time()
+  checked <- parquet_staleness(repo)
+  if (nrow(checked) == 0L) {
     if (!quiet) cli::cli_alert_info("No stream files found; nothing to do")
     return(invisible(tibble::tibble()))
   }
-  stems <- sub("[.].*$", "", fs::path_file(infiles))
-  ids <- suppressWarnings(as.numeric(stems))
-  ord <- order(ids, stems, na.last = TRUE, decreasing = TRUE)
-  infiles <- infiles[ord]
-  outfiles <- fs::path(pq_dir, paste0(stems[ord], ".parquet"))
-
-  ## Decide what needs rebuilding -------------------------------------------
-  if (!quiet) {
-    cli::cli_alert_info("{length(infiles)} stream file{?s} found")
-    cli::cli_alert_info("Hashing and checking staleness ...")
-  }
-  t0 <- Sys.time()
-  checked <- content_check(infiles, outfiles, hash_dir = hash_dir)
   stale <- checked[checked$stale, ]
   if (!quiet) {
+    why <- hash_reason_summary(checked)
     cli::cli_alert_info(
-      "{nrow(stale)} stale, {nrow(checked) - nrow(stale)} up to date ({elapsed(t0)})"
+      "{nrow(checked)} stream file{?s}, {nrow(stale)} stale, {nrow(checked) - nrow(stale)} up to date ({elapsed(t0)})"
     )
+    if (nzchar(why)) cli::cli_alert_info("Stale because: {why}")
   }
   if (nrow(stale) == 0L) {
     if (!quiet) cli::cli_alert_info("Nothing to convert ({elapsed(t_all)})")
@@ -204,6 +193,9 @@ activity_streams_to_parquet <- function(repo = here("strava_repo"),
     }
 
     nanoparquet::write_parquet(d, outfile, compression = "gzip")
+    # Only now that the output exists: a failed conversion leaves no sidecar
+    # and so stays stale, and is retried on the next run.
+    hash_write_one(stale$hashfile[[i]], c(stream = stale$stream[[i]]))
 
     if (!quiet && length(notes) > 0L) {
       cli::cli_alert_warning("{cur_name}: {paste(notes, collapse = '; ')}")

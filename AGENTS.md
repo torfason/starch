@@ -32,10 +32,10 @@ test_thorough()          # run tests including the slow exhaustive fixture loop
 Source lives in `R/`:
 
 - `read_streams.R` – the reader family. `read_stream(path)` dispatches on the extension (after stripping `.gz`) to `read_gpx_stream()`, `read_tcx_stream()`, or `read_fit_stream()`. Each reads the file **once** and returns a stream tibble (one row per track point) with columns drawn from `timestamp`, `lat`, `lng`, `altitude`, `heartrate`, `cadence`, `temp`, `dev_dist`, `velocity_smooth`, `watts`, `grade_smooth`. `drop_empty_cols()` removes any column that is entirely `NA`.
-- `utils.R` – helpers belonging to no layer. `hash_rows()` returns one hash per row of a data frame.
+- `utils.R` – helpers belonging to no layer. `hash_rows()` returns one hash per row of a data frame; `hash_path()`, `hash_read_one()`, `hash_write_one()`, `hash_check()`, `hash_reason_summary()` and `empty_staleness()` implement the sidecar mechanism described under *Hash sidecars*.
 - `derive_columns.R` – the `addcols_*` transforms: `addcols_time()`, `addcols_distance()` (adds `distance`, plus `dist_diff` when device distance `dev_dist` is present), `addcols_speed()` (smoothed), `addcols_speed_naive()`, `addcols_latlng_offset()` (coordinates relative to the first fix, since the absolute values dwarf the within-activity variation). Pure tibble → tibble; documented as one family via `@describeIn`. Also holds `activity_col_order` and `relocate_activity_cols()`.
 - `strava_repo.R` – export import. `latest_strava_zip()` picks the most recent archive from a directory; `strava_zip_to_repo()` extracts it into a git repository, gzips the tracks that arrived uncompressed, and commits.
-- `activities_parquet.R` – `activity_streams_to_parquet()` converts archived activities to one Parquet file each, rebuilding only what changed. The internal `content_check()` implements the staleness test.
+- `activities_parquet.R` – `activity_streams_to_parquet()` converts archived activities to one Parquet file each, rebuilding only what changed. The internal `parquet_staleness()` decides what that is, newest first.
 - `dash.R` – the public dashboard API: `dash_render()`, `dash_view()`, `dash_update_heatmap()`. Every stack keeps its own prefixed functions internal, and these resolve to the static Quarto stack. If another stack becomes the default, this is the only file that changes.
 - `press.R` – `press()`, the one-call maintenance run: import the export archive, convert to Parquet, render the static dashboard, open it. Prompts before each step with the step's context, and takes every default as an argument so the sequence can also run unattended with `confirm = FALSE`. Sits above the stacks, so it is unprefixed.
 - `dashboard_common.R` – shared by every dashboard stack, and belonging to none of them. `load_activities_csv()` reads the export manifest, `parquet_stream_stats()` reads per-activity statistics out of the Parquet footers, `parquet_stream_summaries()` reads the few columns that the footers cannot answer for (mean position, best splits), and `require_pkgs()` checks the render-time Suggests. The split between the two readers is the point: footers are cheap and every stack uses them, whereas the summaries open data pages and only the overview table asks for them. Nothing here is prefixed, and nothing here may depend on a particular stack.
@@ -52,15 +52,29 @@ strava_repo/activities/  --activity_streams_to_parquet()-->  strava_repo/activit
 
 Both `activity_streams_to_parquet()` and the dashboard's activity renderer work **newest first**, because both cap their work with `max_files`. A capped run should therefore leave the most recent activities complete, and a fresh `press()` should reach a usable dashboard for what happened yesterday rather than for 2013.
 
-The repository holds the export verbatim under version control: every import extracts the whole archive and overwrites, because activities can be edited in Strava after the fact, so a file's presence says nothing about whether its content is current. Git determines what actually changed. Generated artefacts (`activities_parquet/`, `activities_hashes/`) live inside the repository but are held out of it by the `.gitignore` written at init, from the `strava_repo_ignore` constant.
+The repository holds the export verbatim under version control: every import extracts the whole archive and overwrites, because activities can be edited in Strava after the fact, so a file's presence says nothing about whether its content is current. Git determines what actually changed. Generated artefacts (`activities_parquet/`, `hashes/`, the dashboard directories) live inside the repository but are held out of it by the `.gitignore` written at init, from the `strava_repo_ignore` constant. `activities_hashes/` is the superseded marker directory, still ignored so that it stays invisible in repositories that predate the sidecars; it can be deleted.
 
 `strava_zip_to_repo()` refuses to run unless the target is either empty or a git repository with a clean working tree. That guard is what makes unattended overwriting safe, and it also makes a failed import recoverable with `git reset --hard`.
 
-### Parquet staleness
+### Hash sidecars
 
-Because every import rewrites the whole archive, modification times say nothing about whether an activity changed. `content_check()` instead records each input's content hash as an **empty marker file** in `activities_hashes/`, named for the hash and stamped with the time that content was first seen. An activity is rebuilt when its Parquet output is older than its marker – which happens only when the bytes genuinely differ. The plain mtime comparison is returned alongside as `semistale`, for comparison only.
+Because every import rewrites the whole archive, modification times say nothing about whether an activity changed. Every generated artefact therefore records the hashes of the inputs that produced it, in a small DCF file alongside:
 
-A conversion that fails leaves an old or absent output against a fresh marker, so it stays stale and is retried on the next run.
+```
+<repo>/hashes/parquet/<stem>.dcf         stream:  <hash of the stream file>
+<repo>/hashes/activity_html/<id>.dcf     parquet: <hash of the Parquet file>
+                                         row:     <hash of the manifest row>
+```
+
+An artefact is stale when it is absent, when its sidecar is absent, or when a recorded hash differs from that input's hash now. No modification times are involved anywhere, and the sidecar is written only once the artefact is safely on disk, so an interrupted or failed step leaves no record and is retried.
+
+`hash_check()` returns a `reason` per row – `"missing"`, `"unrecorded"`, or the comma-joined names of the fields that moved – so a run can report *why* it is rebuilding, which is the diagnostic that was missing when this last went wrong.
+
+Two design points worth not undoing. One file per artefact rather than one manifest per stage: a manifest is one read and one write instead of hundreds of tiny files, but it needs coordinating between workers, whereas a sidecar is written by whoever wrote the artefact and by no one else – which matters for the planned mirai parallelisation. And DCF rather than JSON: `read.dcf()` is base R and reads a two-field file at the same speed as jsonlite while allocating a hundredth as much.
+
+Each stage exposes its check as a standalone function – `parquet_staleness()`, `activity_html_staleness()` – so that `press()` reports the same numbers before prompting as the step will act on. Hashing a thousand files takes a fraction of a second, so running the check twice is cheaper than threading its result between them. Do not reintroduce a directory count as a summary line: that is exactly the bug where 1073 files reported as converted while 1023 were stale.
+
+The superseded content-marker scheme is kept, unused, at the bottom of `utils.R` for reference.
 
 ### The dashboard stacks
 
@@ -164,7 +178,8 @@ lat_offset, lng_offset             # recentred position
 - The exhaustive loop over every fixture is gated by `skip_if_not_thorough()` and only runs under `test_thorough()`. Fast single-file tests always run.
 - Activity tests live in `test-read_streams.R` and `test-derive_columns.R`; recordless workout behavior in `test-workouts.R`.
 - Golden tests use `summarize_stream()` (in `helper-fixtures.R`) to reduce a stream to one row per column – name, NA count, mean, and a hash for character columns – and compare with `expect_snapshot_value(style = "json2")`, with snapshots under `_snaps/`. Comparing summaries rather than hashing whole columns is deliberate: `expect_equal()` semantics keep a numeric tolerance, whereas a digest of a double vector is a bit-exactness test that fails across platforms, since the geodesic maths in `geodist` does not agree to the last bit between macOS/ARM and Linux/x86. Regenerate with `testthat::snapshot_accept()`.
-- The import and Parquet functions have no tests yet (see open tasks).
+- `test-hashes.R` covers the sidecar layer – `hash_rows()`, the DCF round trip, unreadable sidecars, the `reason` values, and `parquet_staleness()` against an on-disk fixture repository. It needs no Strava data and no Quarto, so it runs in CI.
+- The import and dashboard functions have no tests yet (see open tasks).
 
 ## Open tasks
 
@@ -191,4 +206,5 @@ lat_offset, lng_offset             # recentred position
 - Native pipe placeholder (`|> f(x = _)`) requires R >= 4.2 – that is the package's declared floor.
 - Dependencies: treat `DESCRIPTION` as authoritative; do not assume the list from memory. FITfileR needs its `Remotes` / `Additional_repositories` entries to install.
 - gzip byte-stability holds **within** a machine, not across them: the OS byte is fixed at build time and the deflate stream can differ between zlib versions. Since the Parquet markers hash the compressed file, moving to another machine invalidates every marker at once and forces a full rebuild. Acceptable, but not free.
-- `rlang::hash()` values may change between rlang versions, and `rlang::hash_file()` differs from the md5 used before. Either invalidates every Parquet marker at once and forces one full rebuild – the same class of cost as the gzip point above, and equally acceptable, since nothing reads the hash value itself.
+- `rlang::hash()` values may change between rlang versions. That invalidates every sidecar at once and forces one full rebuild – the same class of cost as the gzip point above, and equally acceptable, since nothing reads the hash value itself.
+- `paste0()` treats a zero-length vector as `""`, so `paste0(stems, ".parquet")` on an empty repository yields `".parquet"` rather than nothing. The staleness functions guard this with an early return of `empty_staleness()`; any new stage needs the same guard.
