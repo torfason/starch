@@ -93,9 +93,13 @@ Source lives in `R/`:
   to none of them.
   [`load_activities_csv()`](https://torfason.github.io/starch/reference/load_activities_csv.md)
   reads the export manifest, `parquet_stream_stats()` reads per-activity
-  statistics out of the Parquet footers, and `require_pkgs()` checks the
-  render-time Suggests. Nothing here is prefixed, and nothing here may
-  depend on a particular stack.
+  statistics out of the Parquet footers, `parquet_stream_summaries()`
+  reads the few columns that the footers cannot answer for (mean
+  position, best splits), and `require_pkgs()` checks the render-time
+  Suggests. The split between the two readers is the point: footers are
+  cheap and every stack uses them, whereas the summaries open data pages
+  and only the overview table asks for them. Nothing here is prefixed,
+  and nothing here may depend on a particular stack.
 - `rmd_dashboard.R` – the Rmd dashboard. `rmd_render_dashboard()`
   renders one flexdashboard page per activity into
   `strava_repo/dashboard_rmd/`, plus a reactable overview table and a
