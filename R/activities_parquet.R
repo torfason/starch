@@ -3,8 +3,8 @@ stream_file_regexp <- "[.](fit|gpx|tcx)([.]gz)?$"
 
 # Content-based staleness check.
 #
-# Each input file gets a marker file in `hash_dir` whose *name* is the md5 of
-# the input's content and whose *mtime* is when that content was first seen.
+# Each input file gets a marker file in `hash_dir` whose *name* is the content
+# hash of the input and whose *mtime* is when that content was first seen.
 # Staleness is then outfile-against-marker rather than outfile-against-input,
 # so a file rewritten byte-identically - which every Strava re-import does to
 # the whole archive - does not trigger a rebuild. `semistale` carries the plain
@@ -13,10 +13,11 @@ stream_file_regexp <- "[.](fit|gpx|tcx)([.]gz)?$"
 # A file whose conversion failed keeps an old (or absent) outfile against a
 # fresh marker, so it stays stale and is retried on the next run.
 content_check <- function(infiles, outfiles, hash_dir) {
-  hashes <- unname(tools::md5sum(infiles))
-  if (anyNA(hashes)) {
-    stop("Could not hash ", sum(is.na(hashes)), " input file(s).", call. = FALSE)
+  unreadable <- !fs::file_exists(infiles)
+  if (any(unreadable)) {
+    stop("Could not hash ", sum(unreadable), " input file(s).", call. = FALSE)
   }
+  hashes <- rlang::hash_file(infiles)
   hashfiles <- fs::path(hash_dir, hashes)
   hashwrite <- !fs::file_exists(hashfiles)
   fs::dir_create(hash_dir)
@@ -50,10 +51,16 @@ content_check <- function(infiles, outfiles, hash_dir) {
 #' @section Staleness:
 #' Every import performed by [strava_zip_to_repo()] rewrites the whole archive,
 #' so file modification times say nothing about whether an activity actually
-#' changed. Instead, each input's md5 is recorded as an empty marker file in
-#' `activities_hashes/`, named for the hash and stamped with the time that
-#' content was first seen. An activity is rebuilt when its Parquet output is
-#' older than that marker, which happens only when the bytes genuinely differ.
+#' changed. Instead, each input's content hash is recorded as an empty marker
+#' file in `activities_hashes/`, named for the hash and stamped with the time
+#' that content was first seen. An activity is rebuilt when its Parquet output
+#' is older than that marker, which happens only when the bytes genuinely
+#' differ.
+#'
+#' Hashing is `rlang::hash_file()`, which is XXH128 rather than md5 and is by
+#' a wide margin the fastest of the file hashers available. The hash value is
+#' not the point - only whether it changed - so the algorithm is free to
+#' change, at the cost of one full rebuild when it does.
 #'
 #' Note that the hash covers the compressed file, so recompressing the archive
 #' on a different machine invalidates every marker at once and forces a full

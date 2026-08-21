@@ -31,10 +31,16 @@ rebuilt.
 
 Every import performed by \code{\link[=strava_zip_to_repo]{strava_zip_to_repo()}} rewrites the whole archive,
 so file modification times say nothing about whether an activity actually
-changed. Instead, each input's md5 is recorded as an empty marker file in
-\verb{activities_hashes/}, named for the hash and stamped with the time that
-content was first seen. An activity is rebuilt when its Parquet output is
-older than that marker, which happens only when the bytes genuinely differ.
+changed. Instead, each input's content hash is recorded as an empty marker
+file in \verb{activities_hashes/}, named for the hash and stamped with the time
+that content was first seen. An activity is rebuilt when its Parquet output
+is older than that marker, which happens only when the bytes genuinely
+differ.
+
+Hashing is \code{rlang::hash_file()}, which is XXH128 rather than md5 and is by
+a wide margin the fastest of the file hashers available. The hash value is
+not the point - only whether it changed - so the algorithm is free to
+change, at the cost of one full rebuild when it does.
 
 Note that the hash covers the compressed file, so recompressing the archive
 on a different machine invalidates every marker at once and forces a full

@@ -45,7 +45,7 @@ summarize_stream <- function(d) {
     mean = vapply(d, \(x) if (is.character(x)) NA_real_
                   else mean(as.numeric(x), na.rm = TRUE),
                   numeric(1), USE.NAMES = FALSE),
-    hash = vapply(d, \(x) if (is.character(x)) tools::md5sum(x)
+    hash = vapply(d, \(x) if (is.character(x)) rlang::hash(x)
                   else NA_character_,
                   character(1), USE.NAMES = FALSE)
   )
