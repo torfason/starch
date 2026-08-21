@@ -254,9 +254,10 @@ qs_render_overview_list <- function(repo = here("strava_repo"),
 #' the Parquet layer. Each row links out to the activity on Strava and, where a
 #' page exists, back into the dashboard.
 #'
-#' Unlike the detail pages this reads every Parquet footer, so it is the slow
-#' part of a full build, and the table's data is embedded in the page rather
-#' than shared.
+#' Unlike the detail pages this reads the whole Parquet layer - every footer
+#' for the point counts, and the position and distance columns of every stream
+#' for the mean coordinates and the best splits - so it is the slow part of a
+#' full build, and the table's data is embedded in the page rather than shared.
 #'
 #' @param repo Path to the Strava repository.
 #' @inheritParams qs_render_activities
@@ -291,11 +292,14 @@ qs_render_overview_table <- function(repo = here("strava_repo"),
   }
   t0 <- Sys.time()
   stats <- parquet_stream_stats(acts$parquet[have_pq], quiet = quiet)
+  summaries <- parquet_stream_summaries(acts$parquet[have_pq], quiet = quiet)
 
   # Widen back to one row per manifest entry, leaving unconverted activities NA.
   full <- empty_stream_stats()[rep(NA_integer_, nrow(acts)), ]
   if (nrow(stats) > 0L) full[have_pq, ] <- stats
-  tbl <- dplyr::bind_cols(acts, full)
+  full_summ <- empty_stream_summaries()[rep(NA_integer_, nrow(acts)), ]
+  if (nrow(summaries) > 0L) full_summ[have_pq, ] <- summaries
+  tbl <- dplyr::bind_cols(acts, full, full_summ)
 
   stage <- qs_stage()
   data_file <- fs::path(stage$qmd, "table_data.rds")

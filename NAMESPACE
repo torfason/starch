@@ -19,16 +19,20 @@ export(read_stream)
 export(read_tcx_stream)
 export(relocate_activity_cols)
 export(strava_zip_to_repo)
-importFrom(dplyr,.data)
-importFrom(dplyr,bind_rows)
-importFrom(dplyr,coalesce)
-importFrom(dplyr,mutate)
+importFrom(dplyr,
+  .data,
+  bind_rows,
+  coalesce,
+  mutate
+)
 importFrom(here,here)
 importFrom(lubridate,ymd_hms)
 importFrom(tibble,tibble)
-importFrom(xml2,read_xml)
-importFrom(xml2,xml_attr)
-importFrom(xml2,xml_double)
-importFrom(xml2,xml_find_all)
-importFrom(xml2,xml_find_first)
-importFrom(xml2,xml_text)
+importFrom(xml2,
+  read_xml,
+  xml_attr,
+  xml_double,
+  xml_find_all,
+  xml_find_first,
+  xml_text
+)

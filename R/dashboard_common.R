@@ -231,3 +231,117 @@ parquet_stream_stats <- function(paths, quiet = FALSE) {
   if (!quiet) cli::cli_progress_done()
   dplyr::bind_rows(rows)
 }
+
+
+# Per-activity summaries that the Parquet footer cannot answer. The footer
+# carries row counts and null counts, so parquet_stream_stats() never touches a
+# data page; a mean position and a fastest split need the values themselves,
+# which makes this the expensive half of building the overview table.
+#
+# min_value / max_value in the footer would give the bounding box for free, but
+# they are raw vectors that the caller decodes itself, they are marked
+# experimental in nanoparquet, and a bounding-box centre is not a mean anyway.
+#
+# Only these columns are used; see stream_summary() for why they are subset
+# after the read rather than during it.
+summary_stream_cols <- c("lat", "lng", "distance", "time")
+
+# Split windows summarised as a best pace, in kilometres. addcols_splits()
+# names its output pace_1k / pace_5k; the summary keeps the stem and says in
+# the prefix that this is the minimum over the whole activity.
+summary_split_km <- c(1, 5)
+
+split_label <- function(km) sub("[.]", "_", as.character(km))
+
+split_pace_cols <- function(km = summary_split_km) {
+  paste0("pace_", split_label(km), "k")
+}
+
+best_split_cols <- function(km = summary_split_km) {
+  paste0("best_", split_label(km), "k")
+}
+
+# mean() over an all-NA vector returns NaN and min() returns Inf, both of which
+# would show up in the table as a value. Fold them back to NA.
+finite_or_na <- function(x) if (isTRUE(is.finite(x))) x else NA_real_
+
+empty_stream_summaries <- function(km = summary_split_km) {
+  cols <- stats::setNames(
+    replicate(length(km) + 2L, numeric(0), simplify = FALSE),
+    c("lat", "lng", best_split_cols(km))
+  )
+  do.call(tibble::tibble, cols)
+}
+
+# The mean of the fixes is a *time*-weighted centre, not the centroid of the
+# route: samples arrive on a clock, so a stop pulls the mean towards itself and
+# a fast descent contributes less than the ground it covers. For placing an
+# activity on the map, or filtering to a region, that is a distinction without
+# a difference - and arguably the better answer, since it lands where the time
+# was spent. It is not a substitute for an arc-length centroid if one is ever
+# wanted. Averaging longitude is also wrong across the antimeridian; no Strava
+# repository that this package has seen goes near it.
+stream_summary <- function(path, km, digits) {
+  pace_cols <- split_pace_cols(km)
+  best_cols <- best_split_cols(km)
+  out <- stats::setNames(
+    rep(list(NA_real_), length(best_cols) + 2L),
+    c("lat", "lng", best_cols)
+  )
+
+  # Read the file whole and subset in R, rather than pushing the column list
+  # down as read_parquet(col_select = ). As of nanoparquet 0.5.1.9000 a
+  # selection that moves a column away from its position in the file drops the
+  # null mask for that column: the non-null values are packed to the front and
+  # the tail is left as whatever was in the buffer, usually zeros. A stream
+  # whose GPS drops out then yields a mean latitude pulled towards zero in
+  # proportion to the gap, and row alignment against every other column is gone
+  # as well. Restoring col_select is worth several seconds on a full build, but
+  # only once the released nanoparquet returns nulls for a reordered selection.
+  d <- tryCatch(
+    tibble::as_tibble(nanoparquet::read_parquet(path)),
+    error = function(e) NULL
+  )
+  if (is.null(d) || nrow(d) == 0L) return(tibble::as_tibble(out))
+  d <- d[intersect(summary_stream_cols, names(d))]
+  if (ncol(d) == 0L) return(tibble::as_tibble(out))
+
+  for (nm in intersect(c("lat", "lng"), names(d))) {
+    out[[nm]] <- finite_or_na(round(mean(d[[nm]], na.rm = TRUE), digits))
+  }
+
+  if (all(c("distance", "time") %in% names(d))) {
+    sp <- addcols_splits(d, distance = km, units = "km", type = "pace")
+    for (j in seq_along(best_cols)) {
+      if (!pace_cols[[j]] %in% names(sp)) next
+      # Windows longer than the activity are dropped by addcols_splits(), and a
+      # window that is present is still all-NA over the opening stretch, so the
+      # min is taken with na.rm and the empty case folded back to NA.
+      out[[best_cols[[j]]]] <- finite_or_na(
+        suppressWarnings(min(sp[[pace_cols[[j]]]], na.rm = TRUE))
+      )
+    }
+  }
+  tibble::as_tibble(out)
+}
+
+parquet_stream_summaries <- function(paths,
+                                     km = summary_split_km,
+                                     digits = 5,
+                                     quiet = FALSE) {
+  if (length(paths) == 0L) return(empty_stream_summaries(km))
+
+  rows <- vector("list", length(paths))
+  if (!quiet) {
+    cli::cli_progress_bar(
+      format = bar_format("reading stream summaries"),
+      total = length(paths), clear = FALSE
+    )
+  }
+  for (i in seq_along(paths)) {
+    rows[[i]] <- stream_summary(paths[[i]], km = km, digits = digits)
+    if (!quiet) cli::cli_progress_update()
+  }
+  if (!quiet) cli::cli_progress_done()
+  dplyr::bind_rows(rows)
+}

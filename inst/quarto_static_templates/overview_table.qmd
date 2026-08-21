@@ -25,10 +25,132 @@ fmt_duration <- function(s) {
   )
 }
 
-num_col <- function(name, digits = 1, width = 80) {
+fmt_pace <- function(min_per_km) {
+  if (is.na(min_per_km) || !is.finite(min_per_km)) return("\u2014")
+  mins <- floor(min_per_km)
+  secs <- round((min_per_km - mins) * 60)
+  if (secs == 60) {
+    mins <- mins + 1
+    secs <- 0
+  }
+  sprintf("%d:%02d", mins, secs)
+}
+
+# Reactable's own filter is a substring match on the rendered text, which is
+# useless on a number: "6" matches 6, 16, 0.62 and 106. This one reads the
+# underlying value and accepts a comparison (">6", "<=6", "=6"), a range
+# ("6:9", "1:", ":8"), or a bare number for an exact match. Rows whose value is
+# missing or non-numeric drop out of every filter, and an expression that does
+# not parse leaves the rows untouched rather than emptying the table.
+#
+# JS() here is reactable's re-export of htmlwidgets::JS(), so the template
+# needs nothing beyond the two libraries above.
+numeric_filter <- JS("
+function(rows, columnId, filterValue) {
+  if (filterValue === undefined || filterValue === null) return rows
+
+  const s = String(filterValue).trim()
+  if (s === '') return rows
+
+  // Helper: filter out missing/non-numeric cell values
+  const getValue = function(row) {
+    const x = row.values[columnId]
+    if (x === null || x === undefined || x === '') return null
+
+    const value = Number(x)
+    return Number.isNaN(value) ? null : value
+  }
+
+  // Comparison syntax: >6, >=6, <6, <=6, =6, ==6
+  const comparison = s.match(/^(<=|>=|<|>|==|=)\\s*(.+)$/)
+
+  if (comparison) {
+    const op = comparison[1]
+    const x = Number(comparison[2])
+
+    if (Number.isNaN(x)) return rows
+
+    return rows.filter(function(row) {
+      const value = getValue(row)
+      if (value === null) return false
+
+      switch (op) {
+        case '>':  return value > x
+        case '>=': return value >= x
+        case '<':  return value < x
+        case '<=': return value <= x
+        case '=':
+        case '==': return value === x
+      }
+    })
+  }
+
+  // Range syntax: 1:, :8, 6:9
+  if (s.includes(':')) {
+    const parts = s.split(':')
+    if (parts.length !== 2) return rows
+
+    const lowerText = parts[0].trim()
+    const upperText = parts[1].trim()
+
+    const lower = lowerText === '' ? null : Number(lowerText)
+    const upper = upperText === '' ? null : Number(upperText)
+
+    if ((lower !== null && Number.isNaN(lower)) ||
+        (upper !== null && Number.isNaN(upper))) {
+      return rows
+    }
+
+    return rows.filter(function(row) {
+      const value = getValue(row)
+      if (value === null) return false
+
+      if (lower !== null && value < lower) return false
+      if (upper !== null && value > upper) return false
+
+      return true
+    })
+  }
+
+  // Plain number: exact match
+  const x = Number(s)
+  if (Number.isNaN(x)) return rows
+
+  return rows.filter(function(row) {
+    const value = getValue(row)
+    return value !== null && value === x
+  })
+}
+")
+
+num_col <- function(name, digits = 1, width = 80, filter = FALSE) {
   colDef(
-    name = name, width = width, filterable = FALSE,
+    name = name, width = width,
+    filterable = filter,
+    filterMethod = if (filter) numeric_filter,
     cell = function(v) if (is.na(v)) "\u2014" else formatC(v, format = "f", digits = digits, big.mark = " ")
+  )
+}
+
+# Coordinates carry five decimals, about a metre, which is finer than the
+# fixes. They are rounded to the same five in R, so what the filter compares
+# and what the cell shows are the same number and "=64.14231" matches.
+coord_col <- function(name, width = 95) {
+  colDef(
+    name = name, width = width,
+    filterable = TRUE, filterMethod = numeric_filter,
+    cell = function(v) if (is.na(v)) "\u2014" else formatC(v, format = "f", digits = 5)
+  )
+}
+
+# Best split paces read as m:ss but are stored as decimal minutes per km, and
+# the filter sees the stored value: "4:30" is the range 4 to 30, not four and a
+# half minutes. Ranges want decimals - "<4.5", "4.5:5".
+pace_col <- function(name, width = 85) {
+  colDef(
+    name = name, width = width,
+    filterable = TRUE, filterMethod = numeric_filter,
+    cell = function(v) fmt_pace(v)
   )
 }
 
@@ -53,7 +175,8 @@ dur_col <- function(name, width = 85) {
 reactable(
   d[, c(
     "activity_date", "activity_id", "activity_name", "activity_type",
-    "distance_km", "elapsed_time_s", "moving_time_s",
+    "lat", "lng",
+    "distance_km", "elapsed_time_s", "moving_time_s", "best_1k", "best_5k",
     "elevation_gain_m", "average_speed_ms", "max_speed_ms",
     "average_heart_rate", "max_heart_rate", "average_cadence",
     "average_watts", "max_watts", "calories",
@@ -111,9 +234,13 @@ reactable(
       }
     ),
     activity_type = colDef(name = "Type", width = 100),
-    distance_km = num_col("Dist (km)", 2),
+    lat = coord_col("Lat"),
+    lng = coord_col("Lng"),
+    distance_km = num_col("Dist (km)", 2, filter = TRUE),
     elapsed_time_s = dur_col("Elapsed"),
     moving_time_s = dur_col("Moving"),
+    best_1k = pace_col("Best 1k"),
+    best_5k = pace_col("Best 5k"),
     elevation_gain_m = int_col("Elev +"),
     average_speed_ms = num_col("Avg m/s", 2),
     max_speed_ms = num_col("Max m/s", 2),

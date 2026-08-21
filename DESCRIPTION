@@ -12,7 +12,6 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 Language: en
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 8.0.0
 Suggests: 
     FITfileR (>= 0.1.11),
     flexdashboard,
@@ -52,3 +51,4 @@ Depends:
     R (>= 4.2.0)
 Remotes: 
     grimbough/FITfileR
+Config/roxygen2/version: 8.1.0
