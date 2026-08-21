@@ -94,6 +94,9 @@ Source lives in `R/`:
   step with the step’s context, and takes every default as an argument
   so the sequence can also run unattended with `confirm = FALSE`. Sits
   above the stacks, so it is unprefixed.
+- `quarto_static_dashboard.R` also owns `qs_activity_html()` (a page’s
+  path, keyed on the activity id), `activity_html_staleness()` (the page
+  stage’s check) and `qs_sweep_orphan_pages()`.
 - `dashboard_common.R` – shared by every dashboard stack, and belonging
   to none of them.
   [`load_activities_csv()`](https://torfason.github.io/starch/reference/load_activities_csv.md)
@@ -191,6 +194,34 @@ else – which matters for the planned mirai parallelisation. And DCF
 rather than JSON: [`read.dcf()`](https://rdrr.io/r/base/dcf.html) is
 base R and reads a two-field file at the same speed as jsonlite while
 allocating a hundredth as much.
+
+### Pages belong to activities, not to streams
+
+An activity page is `dashboard_qs/activities/<activity_id>.html`. It
+used to be named for the stream file’s stem, which is a different number
+for many activities. The page belongs to the activity: it is rebuilt
+when the manifest row changes, whether or not the stream moved, and the
+index and the overview table already keyed their links and anchors on
+the activity id, so the file name now agrees with them. The Parquet file
+stays keyed on the stem, because that is what it is a conversion of.
+
+`activity_html_staleness()` hashes two ancestors, the Parquet file and
+the whole manifest row. The whole row rather than the fields the
+template reads today: over-rendering is cheap and missing a newly-added
+dependency is not, so adding a column to
+[`load_activities_csv()`](https://torfason.github.io/starch/reference/load_activities_csv.md)
+deliberately rebuilds every page. Hash the manifest **before** the
+render functions bolt on `parquet`, `html` and `has_page` – those
+derived columns have no business in the hash.
+
+Template changes are deliberately not tracked. Editing `activity.qmd`
+rebuilds nothing; delete the pages to force it.
+
+`qs_sweep_orphan_pages()` was written to delete any HTML in
+`activities/` whose name is not a current activity id. Howver, it has
+been disabled to prevent automatic deletion of files. Cleaning out crud
+can be done with the occasional full rebuild rather than implementing
+autodeletions.
 
 Each stage exposes its check as a standalone function –
 `parquet_staleness()`, `activity_html_staleness()` – so that
@@ -409,6 +440,12 @@ relied on or extended.
   across platforms, since the geodesic maths in `geodist` does not agree
   to the last bit between macOS/ARM and Linux/x86. Regenerate with
   [`testthat::snapshot_accept()`](https://testthat.r-lib.org/reference/snapshot_accept.html).
+- `test-activity-html-staleness.R` covers the page stage against an
+  on-disk fixture repository whose activity ids and stream stems
+  deliberately disagree: id-based naming, rebuild on a changed Parquet
+  file, rebuild on a changed manifest row, the awaiting-conversion
+  state, the orphan sweep, the empty manifest, and the renderer’s join.
+  No Quarto, so it runs in CI.
 - `test-hashes.R` covers the sidecar layer – `hash_rows()`, the DCF
   round trip, unreadable sidecars, the `reason` values, and
   `parquet_staleness()` against an on-disk fixture repository. It needs
@@ -463,6 +500,12 @@ relied on or extended.
   a large import.
 - **`activities_html/`** is not in `strava_repo_ignore`; add it if HTML
   reports land inside the repository.
+- **Orphaned sidecars.** `qs_sweep_orphan_pages()` removes orphaned
+  pages but leaves their sidecars in `hashes/activity_html/`. Harmless –
+  one small file per activity ever seen – but not tidy.
+- **The other two stacks.** `rmd_` and `qd_` still name pages for the
+  stream stem and have no staleness checking. They are kept only for
+  comparison and are candidates for removal.
 
 ## Open questions
 
@@ -505,6 +548,11 @@ relied on or extended.
   once and forces one full rebuild – the same class of cost as the gzip
   point above, and equally acceptable, since nothing reads the hash
   value itself.
+- [`fs::file_exists()`](https://fs.r-lib.org/reference/file_access.html)
+  returns a logical vector **named for the paths**, and those names ride
+  along into every column derived from it – a `stale` column silently
+  acquired `fs_path` names this way.
+  [`unname()`](https://rdrr.io/r/base/unname.html) at the source.
 - [`paste0()`](https://rdrr.io/r/base/paste.html) treats a zero-length
   vector as `""`, so `paste0(stems, ".parquet")` on an empty repository
   yields `".parquet"` rather than nothing. The staleness functions guard

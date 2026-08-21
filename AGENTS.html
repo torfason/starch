@@ -72,6 +72,8 @@
 <li>
 <code>press.R</code> – <code><a href="reference/press.html">press()</a></code>, the one-call maintenance run: import the export archive, convert to Parquet, render the static dashboard, open it. Prompts before each step with the step’s context, and takes every default as an argument so the sequence can also run unattended with <code>confirm = FALSE</code>. Sits above the stacks, so it is unprefixed.</li>
 <li>
+<code>quarto_static_dashboard.R</code> also owns <code>qs_activity_html()</code> (a page’s path, keyed on the activity id), <code>activity_html_staleness()</code> (the page stage’s check) and <code>qs_sweep_orphan_pages()</code>.</li>
+<li>
 <code>dashboard_common.R</code> – shared by every dashboard stack, and belonging to none of them. <code><a href="reference/load_activities_csv.html">load_activities_csv()</a></code> reads the export manifest, <code>parquet_stream_stats()</code> reads per-activity statistics out of the Parquet footers, <code>parquet_stream_summaries()</code> reads the few columns that the footers cannot answer for (mean position, best splits), and <code>require_pkgs()</code> checks the render-time Suggests. The split between the two readers is the point: footers are cheap and every stack uses them, whereas the summaries open data pages and only the overview table asks for them. Nothing here is prefixed, and nothing here may depend on a particular stack.</li>
 <li>
 <code>rmd_dashboard.R</code> – the Rmd dashboard. <code>rmd_render_dashboard()</code> renders one flexdashboard page per activity into <code>strava_repo/dashboard_rmd/</code>, plus a reactable overview table and a static index. Templates in <code>inst/rmd_templates/</code>.</li>
@@ -96,6 +98,13 @@ strava_repo/activities/  --activity_streams_to_parquet()--&gt;  strava_repo/acti
 <p>An artefact is stale when it is absent, when its sidecar is absent, or when a recorded hash differs from that input’s hash now. No modification times are involved anywhere, and the sidecar is written only once the artefact is safely on disk, so an interrupted or failed step leaves no record and is retried.</p>
 <p><code>hash_check()</code> returns a <code>reason</code> per row – <code>"missing"</code>, <code>"unrecorded"</code>, or the comma-joined names of the fields that moved – so a run can report <em>why</em> it is rebuilding, which is the diagnostic that was missing when this last went wrong.</p>
 <p>Two design points worth not undoing. One file per artefact rather than one manifest per stage: a manifest is one read and one write instead of hundreds of tiny files, but it needs coordinating between workers, whereas a sidecar is written by whoever wrote the artefact and by no one else – which matters for the planned mirai parallelisation. And DCF rather than JSON: <code><a href="https://rdrr.io/r/base/dcf.html" class="external-link">read.dcf()</a></code> is base R and reads a two-field file at the same speed as jsonlite while allocating a hundredth as much.</p>
+</div>
+<div class="section level3">
+<h3 id="pages-belong-to-activities-not-to-streams">Pages belong to activities, not to streams<a class="anchor" aria-label="anchor" href="#pages-belong-to-activities-not-to-streams"></a></h3>
+<p>An activity page is <code>dashboard_qs/activities/&lt;activity_id&gt;.html</code>. It used to be named for the stream file’s stem, which is a different number for many activities. The page belongs to the activity: it is rebuilt when the manifest row changes, whether or not the stream moved, and the index and the overview table already keyed their links and anchors on the activity id, so the file name now agrees with them. The Parquet file stays keyed on the stem, because that is what it is a conversion of.</p>
+<p><code>activity_html_staleness()</code> hashes two ancestors, the Parquet file and the whole manifest row. The whole row rather than the fields the template reads today: over-rendering is cheap and missing a newly-added dependency is not, so adding a column to <code><a href="reference/load_activities_csv.html">load_activities_csv()</a></code> deliberately rebuilds every page. Hash the manifest <strong>before</strong> the render functions bolt on <code>parquet</code>, <code>html</code> and <code>has_page</code> – those derived columns have no business in the hash.</p>
+<p>Template changes are deliberately not tracked. Editing <code>activity.qmd</code> rebuilds nothing; delete the pages to force it.</p>
+<p><code>qs_sweep_orphan_pages()</code> was written to delete any HTML in <code>activities/</code> whose name is not a current activity id. Howver, it has been disabled to prevent automatic deletion of files. Cleaning out crud can be done with the occasional full rebuild rather than implementing autodeletions.</p>
 <p>Each stage exposes its check as a standalone function – <code>parquet_staleness()</code>, <code>activity_html_staleness()</code> – so that <code><a href="reference/press.html">press()</a></code> reports the same numbers before prompting as the step will act on. Hashing a thousand files takes a fraction of a second, so running the check twice is cheaper than threading its result between them. Do not reintroduce a directory count as a summary line: that is exactly the bug where 1073 files reported as converted while 1023 were stale.</p>
 <p>The superseded content-marker scheme is kept, unused, at the bottom of <code>utils.R</code> for reference.</p>
 </div>
@@ -219,6 +228,8 @@ lat_offset, lng_offset             # recentred position</code></pre>
 <li>Activity tests live in <code>test-read_streams.R</code> and <code>test-derive_columns.R</code>; recordless workout behavior in <code>test-workouts.R</code>.</li>
 <li>Golden tests use <code>summarize_stream()</code> (in <code>helper-fixtures.R</code>) to reduce a stream to one row per column – name, NA count, mean, and a hash for character columns – and compare with <code>expect_snapshot_value(style = "json2")</code>, with snapshots under <code>_snaps/</code>. Comparing summaries rather than hashing whole columns is deliberate: <code>expect_equal()</code> semantics keep a numeric tolerance, whereas a digest of a double vector is a bit-exactness test that fails across platforms, since the geodesic maths in <code>geodist</code> does not agree to the last bit between macOS/ARM and Linux/x86. Regenerate with <code><a href="https://testthat.r-lib.org/reference/snapshot_accept.html" class="external-link">testthat::snapshot_accept()</a></code>.</li>
 <li>
+<code>test-activity-html-staleness.R</code> covers the page stage against an on-disk fixture repository whose activity ids and stream stems deliberately disagree: id-based naming, rebuild on a changed Parquet file, rebuild on a changed manifest row, the awaiting-conversion state, the orphan sweep, the empty manifest, and the renderer’s join. No Quarto, so it runs in CI.</li>
+<li>
 <code>test-hashes.R</code> covers the sidecar layer – <code>hash_rows()</code>, the DCF round trip, unreadable sidecars, the <code>reason</code> values, and <code>parquet_staleness()</code> against an on-disk fixture repository. It needs no Strava data and no Quarto, so it runs in CI.</li>
 <li>The import and dashboard functions have no tests yet (see open tasks).</li>
 </ul></div>
@@ -242,6 +253,10 @@ lat_offset, lng_offset             # recentred position</code></pre>
 <strong>One tree walk too many.</strong> <code><a href="reference/strava_zip_to_repo.html">strava_zip_to_repo()</a></code> calls <code>git_status()</code> before staging purely to count changes for the commit message. Running <code>git_add(".")</code> first and then <code>git_status(staged = TRUE)</code> would cut a full walk, which is minutes on a large import.</li>
 <li>
 <strong><code>activities_html/</code></strong> is not in <code>strava_repo_ignore</code>; add it if HTML reports land inside the repository.</li>
+<li>
+<strong>Orphaned sidecars.</strong> <code>qs_sweep_orphan_pages()</code> removes orphaned pages but leaves their sidecars in <code>hashes/activity_html/</code>. Harmless – one small file per activity ever seen – but not tidy.</li>
+<li>
+<strong>The other two stacks.</strong> <code>rmd_</code> and <code>qd_</code> still name pages for the stream stem and have no staleness checking. They are kept only for comparison and are candidates for removal.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="open-questions">Open questions<a class="anchor" aria-label="anchor" href="#open-questions"></a></h2>
@@ -263,6 +278,8 @@ lat_offset, lng_offset             # recentred position</code></pre>
 <li>gzip byte-stability holds <strong>within</strong> a machine, not across them: the OS byte is fixed at build time and the deflate stream can differ between zlib versions. Since the Parquet markers hash the compressed file, moving to another machine invalidates every marker at once and forces a full rebuild. Acceptable, but not free.</li>
 <li>
 <code><a href="https://rlang.r-lib.org/reference/hash.html" class="external-link">rlang::hash()</a></code> values may change between rlang versions. That invalidates every sidecar at once and forces one full rebuild – the same class of cost as the gzip point above, and equally acceptable, since nothing reads the hash value itself.</li>
+<li>
+<code><a href="https://fs.r-lib.org/reference/file_access.html" class="external-link">fs::file_exists()</a></code> returns a logical vector <strong>named for the paths</strong>, and those names ride along into every column derived from it – a <code>stale</code> column silently acquired <code>fs_path</code> names this way. <code><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname()</a></code> at the source.</li>
 <li>
 <code><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0()</a></code> treats a zero-length vector as <code>""</code>, so <code>paste0(stems, ".parquet")</code> on an empty repository yields <code>".parquet"</code> rather than nothing. The staleness functions guard this with an early return of <code>empty_staleness()</code>; any new stage needs the same guard.</li>
 </ul></div>
