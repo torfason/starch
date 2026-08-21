@@ -50,6 +50,8 @@ strava_zips/*.zip  --strava_zip_to_repo()-->  strava_repo/
 strava_repo/activities/  --activity_streams_to_parquet()-->  strava_repo/activities_parquet/
 ```
 
+Both `activity_streams_to_parquet()` and the dashboard's activity renderer work **newest first**, because both cap their work with `max_files`. A capped run should therefore leave the most recent activities complete, and a fresh `press()` should reach a usable dashboard for what happened yesterday rather than for 2013.
+
 The repository holds the export verbatim under version control: every import extracts the whole archive and overwrites, because activities can be edited in Strava after the fact, so a file's presence says nothing about whether its content is current. Git determines what actually changed. Generated artefacts (`activities_parquet/`, `activities_hashes/`) live inside the repository but are held out of it by the `.gitignore` written at init, from the `strava_repo_ignore` constant.
 
 `strava_zip_to_repo()` refuses to run unless the target is either empty or a git repository with a clean working tree. That guard is what makes unattended overwriting safe, and it also makes a failed import recoverable with `git reset --hard`.

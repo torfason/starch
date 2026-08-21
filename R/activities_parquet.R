@@ -77,6 +77,8 @@ content_check <- function(infiles, outfiles, hash_dir) {
 #' @param repo Path to the Strava repository, as produced by
 #'   [strava_zip_to_repo()].
 #' @param max_files Maximum number of stale activities to convert in one call.
+#'   Activities are taken newest first, so a run that hits the cap leaves the
+#'   most recent ones converted and the backlog for the next call.
 #' @param quiet Suppress progress reporting.
 #'
 #' @return A tibble logging one row per converted activity, invisibly.
@@ -98,7 +100,12 @@ activity_streams_to_parquet <- function(repo = here("strava_repo"),
     cli::cli_alert_info("Repository {.path {repo}}")
   }
 
-  ## Enumerate supported stream files, in activity-id order ------------------
+  ## Enumerate supported stream files, newest first --------------------------
+  # Strava activity ids increase with time, so the numeric stem sorts as the
+  # activity date does. Descending order matters because `max_files` truncates
+  # the stale set: a partial run should leave the most recent activities
+  # converted, since those are the ones the dashboard is opened to look at.
+  # Stems that are not numeric (there should be none) sort last either way.
   infiles <- fs::dir_ls(
     act_dir, type = "file", regexp = stream_file_regexp, ignore.case = TRUE
   )
@@ -108,7 +115,7 @@ activity_streams_to_parquet <- function(repo = here("strava_repo"),
   }
   stems <- sub("[.].*$", "", fs::path_file(infiles))
   ids <- suppressWarnings(as.numeric(stems))
-  ord <- order(ids, stems, na.last = TRUE)
+  ord <- order(ids, stems, na.last = TRUE, decreasing = TRUE)
   infiles <- infiles[ord]
   outfiles <- fs::path(pq_dir, paste0(stems[ord], ".parquet"))
 
