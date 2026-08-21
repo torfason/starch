@@ -52,7 +52,10 @@ Source lives in `R/`:
   `velocity_smooth`, `watts`, `grade_smooth`. `drop_empty_cols()`
   removes any column that is entirely `NA`.
 - `utils.R` – helpers belonging to no layer. `hash_rows()` returns one
-  hash per row of a data frame.
+  hash per row of a data frame; `hash_path()`, `hash_read_one()`,
+  `hash_write_one()`, `hash_check()`, `hash_reason_summary()` and
+  `empty_staleness()` implement the sidecar mechanism described under
+  *Hash sidecars*.
 - `derive_columns.R` – the `addcols_*` transforms:
   [`addcols_time()`](https://torfason.github.io/starch/reference/derive_columns.md),
   [`addcols_distance()`](https://torfason.github.io/starch/reference/derive_columns.md)
@@ -75,8 +78,8 @@ Source lives in `R/`:
 - `activities_parquet.R` –
   [`activity_streams_to_parquet()`](https://torfason.github.io/starch/reference/activity_streams_to_parquet.md)
   converts archived activities to one Parquet file each, rebuilding only
-  what changed. The internal `content_check()` implements the staleness
-  test.
+  what changed. The internal `parquet_staleness()` decides what that is,
+  newest first.
 - `dash.R` – the public dashboard API:
   [`dash_render()`](https://torfason.github.io/starch/reference/dash_render.md),
   [`dash_view()`](https://torfason.github.io/starch/reference/dash_view.md),
@@ -145,10 +148,12 @@ The repository holds the export verbatim under version control: every
 import extracts the whole archive and overwrites, because activities can
 be edited in Strava after the fact, so a file’s presence says nothing
 about whether its content is current. Git determines what actually
-changed. Generated artefacts (`activities_parquet/`,
-`activities_hashes/`) live inside the repository but are held out of it
+changed. Generated artefacts (`activities_parquet/`, `hashes/`, the
+dashboard directories) live inside the repository but are held out of it
 by the `.gitignore` written at init, from the `strava_repo_ignore`
-constant.
+constant. `activities_hashes/` is the superseded marker directory, still
+ignored so that it stays invisible in repositories that predate the
+sidecars; it can be deleted.
 
 [`strava_zip_to_repo()`](https://torfason.github.io/starch/reference/strava_zip_to_repo.md)
 refuses to run unless the target is either empty or a git repository
@@ -156,19 +161,48 @@ with a clean working tree. That guard is what makes unattended
 overwriting safe, and it also makes a failed import recoverable with
 `git reset --hard`.
 
-### Parquet staleness
+### Hash sidecars
 
 Because every import rewrites the whole archive, modification times say
-nothing about whether an activity changed. `content_check()` instead
-records each input’s content hash as an **empty marker file** in
-`activities_hashes/`, named for the hash and stamped with the time that
-content was first seen. An activity is rebuilt when its Parquet output
-is older than its marker – which happens only when the bytes genuinely
-differ. The plain mtime comparison is returned alongside as `semistale`,
-for comparison only.
+nothing about whether an activity changed. Every generated artefact
+therefore records the hashes of the inputs that produced it, in a small
+DCF file alongside:
 
-A conversion that fails leaves an old or absent output against a fresh
-marker, so it stays stale and is retried on the next run.
+    <repo>/hashes/parquet/<stem>.dcf         stream:  <hash of the stream file>
+    <repo>/hashes/activity_html/<id>.dcf     parquet: <hash of the Parquet file>
+                                             row:     <hash of the manifest row>
+
+An artefact is stale when it is absent, when its sidecar is absent, or
+when a recorded hash differs from that input’s hash now. No modification
+times are involved anywhere, and the sidecar is written only once the
+artefact is safely on disk, so an interrupted or failed step leaves no
+record and is retried.
+
+`hash_check()` returns a `reason` per row – `"missing"`, `"unrecorded"`,
+or the comma-joined names of the fields that moved – so a run can report
+*why* it is rebuilding, which is the diagnostic that was missing when
+this last went wrong.
+
+Two design points worth not undoing. One file per artefact rather than
+one manifest per stage: a manifest is one read and one write instead of
+hundreds of tiny files, but it needs coordinating between workers,
+whereas a sidecar is written by whoever wrote the artefact and by no one
+else – which matters for the planned mirai parallelisation. And DCF
+rather than JSON: [`read.dcf()`](https://rdrr.io/r/base/dcf.html) is
+base R and reads a two-field file at the same speed as jsonlite while
+allocating a hundredth as much.
+
+Each stage exposes its check as a standalone function –
+`parquet_staleness()`, `activity_html_staleness()` – so that
+[`press()`](https://torfason.github.io/starch/reference/press.md)
+reports the same numbers before prompting as the step will act on.
+Hashing a thousand files takes a fraction of a second, so running the
+check twice is cheaper than threading its result between them. Do not
+reintroduce a directory count as a summary line: that is exactly the bug
+where 1073 files reported as converted while 1023 were stale.
+
+The superseded content-marker scheme is kept, unused, at the bottom of
+`utils.R` for reference.
 
 ### The dashboard stacks
 
@@ -375,7 +409,11 @@ relied on or extended.
   across platforms, since the geodesic maths in `geodist` does not agree
   to the last bit between macOS/ARM and Linux/x86. Regenerate with
   [`testthat::snapshot_accept()`](https://testthat.r-lib.org/reference/snapshot_accept.html).
-- The import and Parquet functions have no tests yet (see open tasks).
+- `test-hashes.R` covers the sidecar layer – `hash_rows()`, the DCF
+  round trip, unreadable sidecars, the `reason` values, and
+  `parquet_staleness()` against an on-disk fixture repository. It needs
+  no Strava data and no Quarto, so it runs in CI.
+- The import and dashboard functions have no tests yet (see open tasks).
 
 ## Open tasks
 
@@ -463,9 +501,12 @@ relied on or extended.
   file, moving to another machine invalidates every marker at once and
   forces a full rebuild. Acceptable, but not free.
 - [`rlang::hash()`](https://rlang.r-lib.org/reference/hash.html) values
-  may change between rlang versions, and
-  [`rlang::hash_file()`](https://rlang.r-lib.org/reference/hash.html)
-  differs from the md5 used before. Either invalidates every Parquet
-  marker at once and forces one full rebuild – the same class of cost as
-  the gzip point above, and equally acceptable, since nothing reads the
-  hash value itself.
+  may change between rlang versions. That invalidates every sidecar at
+  once and forces one full rebuild – the same class of cost as the gzip
+  point above, and equally acceptable, since nothing reads the hash
+  value itself.
+- [`paste0()`](https://rdrr.io/r/base/paste.html) treats a zero-length
+  vector as `""`, so `paste0(stems, ".parquet")` on an empty repository
+  yields `".parquet"` rather than nothing. The staleness functions guard
+  this with an early return of `empty_staleness()`; any new stage needs
+  the same guard.

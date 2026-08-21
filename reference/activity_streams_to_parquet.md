@@ -24,7 +24,9 @@ activity_streams_to_parquet(
 
 - max_files:
 
-  Maximum number of stale activities to convert in one call.
+  Maximum number of stale activities to convert in one call. Activities
+  are taken newest first, so a run that hits the cap leaves the most
+  recent ones converted and the backlog for the next call.
 
 - quiet:
 
@@ -39,11 +41,11 @@ A tibble logging one row per converted activity, invisibly.
 Every import performed by
 [`strava_zip_to_repo()`](https://torfason.github.io/starch/reference/strava_zip_to_repo.md)
 rewrites the whole archive, so file modification times say nothing about
-whether an activity actually changed. Instead, each input's content hash
-is recorded as an empty marker file in `activities_hashes/`, named for
-the hash and stamped with the time that content was first seen. An
-activity is rebuilt when its Parquet output is older than that marker,
-which happens only when the bytes genuinely differ.
+whether an activity actually changed. Instead, each Parquet file gets a
+sidecar at `hashes/parquet/<stem>.dcf` recording the hash of the stream
+it was built from, written once the Parquet file is safely on disk. An
+activity is rebuilt when the Parquet file is absent, the sidecar is
+absent, or the stream now hashes differently.
 
 Hashing is
 [`rlang::hash_file()`](https://rlang.r-lib.org/reference/hash.html),
@@ -53,7 +55,7 @@ whether it changed - so the algorithm is free to change, at the cost of
 one full rebuild when it does.
 
 Note that the hash covers the compressed file, so recompressing the
-archive on a different machine invalidates every marker at once and
+archive on a different machine invalidates every sidecar at once and
 forces a full rebuild.
 
 ## Failures

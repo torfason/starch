@@ -64,7 +64,9 @@ rebuilt.</p>
 
 
 <dt id="arg-max-files">max_files<a class="anchor" aria-label="anchor" href="#arg-max-files"></a></dt>
-<dd><p>Maximum number of stale activities to convert in one call.</p></dd>
+<dd><p>Maximum number of stale activities to convert in one call.
+Activities are taken newest first, so a run that hits the cap leaves the
+most recent ones converted and the backlog for the next call.</p></dd>
 
 
 <dt id="arg-quiet">quiet<a class="anchor" aria-label="anchor" href="#arg-quiet"></a></dt>
@@ -81,17 +83,17 @@ rebuilt.</p>
 
 <p>Every import performed by <code><a href="strava_zip_to_repo.html">strava_zip_to_repo()</a></code> rewrites the whole archive,
 so file modification times say nothing about whether an activity actually
-changed. Instead, each input's content hash is recorded as an empty marker
-file in <code>activities_hashes/</code>, named for the hash and stamped with the time
-that content was first seen. An activity is rebuilt when its Parquet output
-is older than that marker, which happens only when the bytes genuinely
-differ.</p>
+changed. Instead, each Parquet file gets a sidecar at
+<code>hashes/parquet/&lt;stem&gt;.dcf</code> recording the hash of the stream it was built
+from, written once the Parquet file is safely on disk. An activity is
+rebuilt when the Parquet file is absent, the sidecar is absent, or the
+stream now hashes differently.</p>
 <p>Hashing is <code><a href="https://rlang.r-lib.org/reference/hash.html" class="external-link">rlang::hash_file()</a></code>, which is XXH128 rather than md5 and is by
 a wide margin the fastest of the file hashers available. The hash value is
 not the point - only whether it changed - so the algorithm is free to
 change, at the cost of one full rebuild when it does.</p>
 <p>Note that the hash covers the compressed file, so recompressing the archive
-on a different machine invalidates every marker at once and forces a full
+on a different machine invalidates every sidecar at once and forces a full
 rebuild.</p>
     </div>
     <div class="section level2">
