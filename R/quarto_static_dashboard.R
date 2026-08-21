@@ -88,14 +88,106 @@ qs_fmt_duration <- function(s) {
 }
 
 
+# Where an activity's page lives. Named for the activity id, not for the stream
+# file's stem: the two differ for many activities, and the page belongs to the
+# activity - it is rebuilt when the manifest row changes, whether or not there
+# is a stream at all. The index and the overview table already key their links
+# on the activity id, so this also makes the file name agree with the anchor.
+qs_activity_html <- function(out_dir, activity_id) {
+  fs::path(out_dir, "activities", paste0(activity_id, ".html"))
+}
+
+# Remove pages that no activity claims any more.
+#
+# This does two jobs. Activities deleted in Strava leave a page behind that the
+# index no longer links to, and the switch from stream-stem to activity-id
+# names orphaned every page written by an earlier version. Both are the same
+# condition: an HTML file in activities/ whose name is not a current activity
+# id. Sidecars for the removed pages go with them, so nothing accumulates.
+qs_sweep_orphan_pages <- function(out_dir, activity_ids, quiet = FALSE) {
+  dir <- fs::path(out_dir, "activities")
+  if (!fs::dir_exists(dir)) return(invisible(character(0)))
+
+  pages <- fs::dir_ls(dir, type = "file", regexp = "[.]html$")
+  named_for <- fs::path_ext_remove(fs::path_file(pages))
+  orphan <- pages[!(named_for %in% activity_ids)]
+  if (length(orphan) == 0L) return(invisible(character(0)))
+
+  stop("qs_sweep is not implemented")
+  #fs::file_delete(orphan)
+  if (!quiet) {
+    cli::cli_alert_info("Removed {length(orphan)} orphaned page{?s}")
+  }
+  invisible(as.character(orphan))
+}
+
+# The activity-page stage's staleness check, on its own so that press() can
+# report the same numbers before prompting as the render will act on.
+#
+# Two ancestors. The Parquet file supplies the stream the charts are drawn
+# from, and the manifest row supplies the name, type and summary figures in the
+# header - so editing an activity's title in Strava, which never touches the
+# stream, still rebuilds the page. The whole row is hashed rather than the
+# fields the template happens to read today, on the grounds that over-rendering
+# is cheap and missing a new dependency is not.
+#
+# `acts` must be load_activities_csv()'s output untouched: the render functions
+# bolt on `parquet`, `html` and `has_page`, and those derived columns have no
+# business in the hash.
+activity_html_staleness <- function(repo, acts = load_activities_csv(repo)) {
+  pq_dir <- fs::path(repo, "activities_parquet")
+  out_dir <- fs::path(repo, "dashboard_qs")
+
+  row_hash <- hash_rows(acts)
+  keep <- !is.na(acts$stem)
+  acts <- acts[keep, ]
+  row_hash <- row_hash[keep]
+
+  # paste0() treats a zero-length vector as "", so an empty manifest would
+  # otherwise produce one entry made of nothing.
+  if (nrow(acts) == 0L) {
+    out <- empty_staleness(c("parquet", "row"))
+    out$parquet_file <- fs::path(character(0))
+    out$have_parquet <- logical(0)
+    return(out)
+  }
+
+  parquet <- fs::path(pq_dir, paste0(acts$stem, ".parquet"))
+  # fs::file_exists() names its result for the paths, and those names ride
+  # along into every column derived from it. Strip them at the source.
+  have_pq <- unname(fs::file_exists(parquet))
+  pq_hash <- rep("", length(parquet))
+  pq_hash[have_pq] <- rlang::hash_file(parquet[have_pq])
+
+  checked <- hash_check(
+    keys = acts$activity_id,
+    outfiles = qs_activity_html(out_dir, acts$activity_id),
+    hashfiles = hash_path(repo, "activity_html", acts$activity_id),
+    current = tibble::tibble(parquet = pq_hash, row = row_hash)
+  )
+  checked$parquet_file <- parquet
+  checked$have_parquet <- have_pq
+  # A page cannot be built before its stream has been converted, so an activity
+  # still awaiting conversion is not counted as work this stage can do. It is
+  # not up to date either, which is what `have_parquet` is for.
+  checked$stale <- checked$stale & have_pq
+  checked
+}
+
 #' Render per-activity pages with Quarto
 #'
-#' Renders one HTML page per activity into `dashboard_qs/`, working backwards
-#' from the most recent activity and stopping after `max_files`.
+#' Renders one HTML page per activity into `dashboard_qs/activities/`, named
+#' for the activity id, working backwards from the most recent activity and
+#' stopping after `max_files`.
 #'
-#' An activity is rendered when it has a Parquet stream file and does not yet
-#' have an HTML page. As in the Rmd stack there is no content hashing: editing
-#' the template will not rebuild an existing page. Delete the page to force one.
+#' An activity is rendered when it has a Parquet stream file and its page is
+#' absent or stale. Staleness is decided by `activity_html_staleness()`: a page
+#' is rebuilt when the Parquet file it was drawn from changes, or when the
+#' activity's row in `activities.csv` changes, so renaming an activity in
+#' Strava rebuilds its page even though the stream is untouched.
+#'
+#' Template changes are not tracked. Editing `activity.qmd` will not rebuild
+#' existing pages; delete them to force it.
 #'
 #' @param repo Path to the Strava repository.
 #' @param max_files Maximum number of activities to render in one call.
@@ -122,21 +214,32 @@ qs_render_activities <- function(repo = here("strava_repo"),
   ))
   require_quarto()
 
-  pq_dir <- fs::path(repo, "activities_parquet")
   out_dir <- fs::path(repo, "dashboard_qs")
 
   acts <- load_activities_csv(repo)
-  acts <- acts[!is.na(acts$stem), ]
-  acts$parquet <- fs::path(pq_dir, paste0(acts$stem, ".parquet"))
-  acts$html <- fs::path(out_dir, "activities", paste0(acts$stem, ".html"))
+  checked <- activity_html_staleness(repo, acts)
 
-  todo <- acts[file.exists(acts$parquet) & !file.exists(acts$html), ]
+  # Orphaned pages should not be sweeped automatically, they should just not be
+  # included in the overview pages. The overview should start with the
+  # activities in activities.csv, and setdiff away those detail.html pages that
+  # are found in the output directory. Extra pages should not get in the way. An
+  # occasional full rebuild can be used to clean out old crud.
+  #qs_sweep_orphan_pages(out_dir, checked$key, quiet = quiet)
+
+  # activity_html_staleness() keys on the activity id and drops manifest rows
+  # with no stream, so the manifest is rejoined here for the columns the
+  # template needs. Both are in the manifest's own newest-first order.
+  todo <- dplyr::inner_join(
+    acts, checked[checked$stale, ], by = c("activity_id" = "key")
+  )
   n <- min(max_files, nrow(todo))
 
   if (!quiet) {
     alert_render(sprintf(
-      "Rendering activities/ (%d of %d awaiting)", n, nrow(todo)
+      "Rendering activities/ (%d of %d outstanding)", n, nrow(todo)
     ))
+    why <- hash_reason_summary(checked)
+    if (nzchar(why)) cli::cli_alert_info("Outstanding because: {why}")
   }
   if (n == 0L) {
     return(invisible(todo[0, ]))
@@ -154,13 +257,13 @@ qs_render_activities <- function(repo = here("strava_repo"),
   }
 
   for (i in seq_len(n)) {
-    cur_name <- paste0(todo$stem[[i]], ".html")
+    cur_name <- paste0(todo$activity_id[[i]], ".html")
     if (!quiet) cli::cli_progress_update()
     quarto::quarto_render(
       input = as.character(fs::path(stage$qmd, "activities", "activity.qmd")),
       output_file = cur_name,
       execute_params = list(
-        parquet_path = as.character(fs::path_abs(todo$parquet[[i]])),
+        parquet_path = as.character(fs::path_abs(todo$parquet_file[[i]])),
         activity_id = todo$activity_id[[i]],
         activity_name = todo$activity_name[[i]],
         activity_type = todo$activity_type[[i]],
@@ -172,6 +275,16 @@ qs_render_activities <- function(repo = here("strava_repo"),
   }
 
   qs_collect(stage, out_dir)
+
+  # Sidecars only after collection: the render writes into the staging tree,
+  # and the page is not in the repository until qs_collect() has copied it. A
+  # run interrupted before this point records nothing and is simply redone.
+  for (i in seq_len(n)) {
+    hash_write_one(
+      todo$hashfile[[i]],
+      c(parquet = todo$parquet[[i]], row = todo$row[[i]])
+    )
+  }
 
   if (!quiet) {
     cli::cli_progress_done()
@@ -208,9 +321,10 @@ qs_render_overview_list <- function(repo = here("strava_repo"),
   acts <- load_activities_csv(repo)
 
   href <- rep("", nrow(acts))
-  has_page <- !is.na(acts$stem) &
-    file.exists(fs::path(out_dir, "activities", paste0(acts$stem, ".html")))
-  href[has_page] <- paste0("activities/", acts$stem[has_page], ".html")
+  has_page <- unname(
+    fs::file_exists(qs_activity_html(out_dir, acts$activity_id))
+  )
+  href[has_page] <- paste0("activities/", acts$activity_id[has_page], ".html")
 
   manifest <- tibble::tibble(
     date = format(acts$activity_date, "%Y-%m-%d"),
@@ -278,8 +392,9 @@ qs_render_overview_table <- function(repo = here("strava_repo"),
     is.na(acts$stem), NA_character_,
     as.character(fs::path(pq_dir, paste0(acts$stem, ".parquet")))
   )
-  acts$has_page <- !is.na(acts$stem) &
-    file.exists(fs::path(out_dir, "activities", paste0(acts$stem, ".html")))
+  acts$has_page <- unname(
+    fs::file_exists(qs_activity_html(out_dir, acts$activity_id))
+  )
 
   have_pq <- !is.na(acts$parquet) & file.exists(acts$parquet)
   if (!quiet) {
@@ -477,12 +592,10 @@ qs_render_index <- function(repo = here("strava_repo"), quiet = FALSE) {
   if (!quiet) alert_render("Rendering index.html")
 
   acts <- load_activities_csv(repo)
-  has_page <- !is.na(acts$stem) &
-    file.exists(fs::path(out_dir, "activities", paste0(acts$stem, ".html")))
-  page_rel <- ifelse(
-    is.na(acts$stem), NA_character_,
-    paste0("activities/", acts$stem, ".html")
+  has_page <- unname(
+    fs::file_exists(qs_activity_html(out_dir, acts$activity_id))
   )
+  page_rel <- paste0("activities/", acts$activity_id, ".html")
 
   cards <- glue::glue_data(
     list(

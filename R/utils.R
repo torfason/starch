@@ -86,7 +86,7 @@ hash_check <- function(keys, outfiles, hashfiles, current) {
   fields <- names(current)
   reason <- character(n)
 
-  have_out <- fs::file_exists(outfiles)
+  have_out <- unname(fs::file_exists(outfiles))
   for (i in seq_len(n)) {
     if (!have_out[[i]]) {
       reason[[i]] <- "missing"

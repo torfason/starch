@@ -118,8 +118,9 @@ press <- function(repo = here("strava_repo"),
   pq_check <- parquet_staleness(repo)
   n_streams <- nrow(pq_check)
   n_stale <- sum(pq_check$stale)
+  n_ok <- n_streams - n_stale
   cli::cli_alert_info(
-    "{n_streams} stream file{?s}, {n_stale} stale, {n_streams - n_stale} up to date"
+    "{n_streams} stream file{?s}, {n_stale} stale, {n_ok} up to date"
   )
   n <- if (confirm) {
     press_ask_count("How many to convert?", max_parquet)
@@ -133,17 +134,18 @@ press <- function(repo = here("strava_repo"),
 
   ## Render ------------------------------------------------------------------
   cli::cli_h2("Render the static dashboard")
-  acts <- load_activities_csv(repo)
-  acts <- acts[!is.na(acts$stem), ]
-  has_pq <- file.exists(
-    fs::path(repo, "activities_parquet", paste0(acts$stem, ".parquet"))
-  )
-  has_page <- file.exists(
-    fs::path(repo, "dashboard_qs", "activities", paste0(acts$stem, ".html"))
-  )
-  n_todo <- sum(has_pq & !has_page)
-  n_done <- sum(has_page)
-  cli::cli_alert_info("{n_todo} awaiting a page, {n_done} already rendered")
+  # As with the conversion step, the same check the renderer runs rather than a
+  # count of files on disk: a page that exists may still be out of date.
+  html_check <- activity_html_staleness(repo)
+  n_todo <- sum(html_check$stale)
+  n_done <- sum(!html_check$stale & html_check$have_parquet)
+  n_wait <- sum(!html_check$have_parquet)
+  cli::cli_alert_info("{n_todo} page{?s} outstanding, {n_done} up to date")
+  why <- hash_reason_summary(html_check)
+  if (nzchar(why)) cli::cli_alert_info("Outstanding because: {why}")
+  if (n_wait > 0L) {
+    cli::cli_alert_info("{n_wait} activit{?y/ies} awaiting conversion")
+  }
   heat <- if (update_heatmap) "rebuilt too" else "left alone"
   cli::cli_alert_info("Overview pages and index rebuilt; heat map {heat}")
   n <- if (confirm) {

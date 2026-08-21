@@ -115,9 +115,11 @@ activity_streams_to_parquet <- function(repo = here("strava_repo"),
   }
   stale <- checked[checked$stale, ]
   if (!quiet) {
+    n_ok <- nrow(checked) - nrow(stale)
     why <- hash_reason_summary(checked)
+    cli::cli_alert_info("{nrow(checked)} stream file{?s} found")
     cli::cli_alert_info(
-      "{nrow(checked)} stream file{?s}, {nrow(stale)} stale, {nrow(checked) - nrow(stale)} up to date ({elapsed(t0)})"
+      "{nrow(stale)} stale, {n_ok} up to date ({elapsed(t0)})"
     )
     if (nzchar(why)) cli::cli_alert_info("Stale because: {why}")
   }
