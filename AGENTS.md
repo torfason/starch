@@ -51,6 +51,8 @@ Source lives in `R/`:
   `altitude`, `heartrate`, `cadence`, `temp`, `dev_dist`,
   `velocity_smooth`, `watts`, `grade_smooth`. `drop_empty_cols()`
   removes any column that is entirely `NA`.
+- `utils.R` – helpers belonging to no layer. `hash_rows()` returns one
+  hash per row of a data frame.
 - `derive_columns.R` – the `addcols_*` transforms:
   [`addcols_time()`](https://torfason.github.io/starch/reference/derive_columns.md),
   [`addcols_distance()`](https://torfason.github.io/starch/reference/derive_columns.md)
@@ -149,7 +151,7 @@ overwriting safe, and it also makes a failed import recoverable with
 
 Because every import rewrites the whole archive, modification times say
 nothing about whether an activity changed. `content_check()` instead
-records each input’s md5 as an **empty marker file** in
+records each input’s content hash as an **empty marker file** in
 `activities_hashes/`, named for the hash and stamped with the time that
 content was first seen. An activity is rebuilt when its Parquet output
 is older than its marker – which happens only when the bytes genuinely
@@ -289,6 +291,16 @@ to `gzip -n`) and won’t produce spurious git diffs.
   r-universe / GitHub, not CRAN). Guard its use with
   [`requireNamespace()`](https://rdrr.io/r/base/ns-load.html) in code
   and `skip_if_not_installed("FITfileR")` in tests.
+- **One hasher.** All hashing goes through
+  [`rlang::hash()`](https://rlang.r-lib.org/reference/hash.html) for
+  objects,
+  [`rlang::hash_file()`](https://rlang.r-lib.org/reference/hash.html)
+  for files, and `hash_rows()` (in `utils.R`) for the rows of a data
+  frame. These benchmark fastest by a clear margin; do not reintroduce
+  `digest` or [`tools::md5sum()`](https://rdrr.io/r/tools/md5sum.html).
+  Hash *values* are never persisted as data or compared across machines
+  – only whether a hash changed matters – so the algorithm is free to
+  change at the cost of one rebuild.
 - **Prose style.** Use en dashes (–), not em dashes (—), in comments and
   docs.
 - **One meaning per cli symbol.** A check mark means an artefact now
@@ -441,7 +453,10 @@ relied on or extended.
   between zlib versions. Since the Parquet markers hash the compressed
   file, moving to another machine invalidates every marker at once and
   forces a full rebuild. Acceptable, but not free.
-- [`tools::md5sum()`](https://rdrr.io/r/tools/md5sum.html) takes file
-  paths, not strings. The hash branch in `summarize_stream()` only fires
-  for character columns, of which stream tibbles currently have none; if
-  one ever appears it will yield `NA` rather than a hash.
+- [`rlang::hash()`](https://rlang.r-lib.org/reference/hash.html) values
+  may change between rlang versions, and
+  [`rlang::hash_file()`](https://rlang.r-lib.org/reference/hash.html)
+  differs from the md5 used before. Either invalidates every Parquet
+  marker at once and forces one full rebuild – the same class of cost as
+  the gzip point above, and equally acceptable, since nothing reads the
+  hash value itself.
