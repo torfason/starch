@@ -1,10 +1,10 @@
 # Import a Strava export archive into a version-controlled repository
 
 Extracts a Strava bulk export into a git repository, gzips the track
-files that arrived uncompressed, and commits the result. Running it
-against successive exports builds a version-controlled history of the
-archive, in which each commit is one export and the diff is whatever
-actually changed.
+files that arrived uncompressed - in parallel, if mirai daemons are
+running - and commits the result. Running it against successive exports
+builds a version-controlled history of the archive, in which each commit
+is one export and the diff is whatever actually changed.
 
 ## Usage
 
