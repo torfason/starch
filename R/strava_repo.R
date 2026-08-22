@@ -73,10 +73,21 @@ latest_strava_zip <- function(dir = here("strava_zips"),
   unname(out)
 }
 
+# Compress one track file in place, returning only whether it worked.
+#
+# Split out of the import so that starch_map() can hand it to a mirai daemon.
+# It touches one file, removes only that file's own original, and shares
+# nothing, so the files can be compressed in any order and any number at once.
+gzip_one <- function(f) {
+  R.utils::gzip(f, overwrite = TRUE, remove = TRUE, compression = 9)
+  TRUE
+}
+
 #' Import a Strava export archive into a version-controlled repository
 #'
 #' Extracts a Strava bulk export into a git repository, gzips the track files
-#' that arrived uncompressed, and commits the result. Running it against
+#' that arrived uncompressed - in parallel, if mirai daemons are running - and
+#' commits the result. Running it against
 #' successive exports builds a version-controlled history of the archive, in
 #' which each commit is one export and the diff is whatever actually changed.
 #'
@@ -214,17 +225,8 @@ strava_zip_to_repo <- function(zip = latest_strava_zip(),
     if (!quiet) cli::cli_alert_info("No uncompressed track files to compress")
   } else {
     t0 <- Sys.time()
+    starch_map(plain, gzip_one, .label = "compressing tracks", .quiet = quiet)
     if (!quiet) {
-      cli::cli_progress_bar(
-        "Compressing tracks", total = length(plain), clear = FALSE
-      )
-    }
-    for (f in plain) {
-      R.utils::gzip(f, overwrite = TRUE, remove = TRUE, compression = 9)
-      if (!quiet) cli::cli_progress_update()
-    }
-    if (!quiet) {
-      cli::cli_progress_done()
       cli::cli_alert_success(
         "Compressed {length(plain)} file{?s} ({elapsed(t0)})"
       )

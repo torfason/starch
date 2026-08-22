@@ -32,7 +32,7 @@ test_thorough()          # run tests including the slow exhaustive fixture loop
 Source lives in `R/`:
 
 - `read_streams.R` – the reader family. `read_stream(path)` dispatches on the extension (after stripping `.gz`) to `read_gpx_stream()`, `read_tcx_stream()`, or `read_fit_stream()`. Each reads the file **once** and returns a stream tibble (one row per track point) with columns drawn from `timestamp`, `lat`, `lng`, `altitude`, `heartrate`, `cadence`, `temp`, `dev_dist`, `velocity_smooth`, `watts`, `grade_smooth`. `drop_empty_cols()` removes any column that is entirely `NA`.
-- `utils.R` – helpers belonging to no layer. `hash_rows()` returns one hash per row of a data frame; `hash_path()`, `hash_read_one()`, `hash_write_one()`, `hash_check()`, `hash_reason_summary()` and `empty_staleness()` implement the sidecar mechanism described under *Hash sidecars*.
+- `utils.R` – helpers belonging to no layer. `starch_parallel()` and `starch_map()` implement optional parallelism (see *Optional parallelism*). `hash_rows()` returns one hash per row of a data frame; `hash_path()`, `hash_read_one()`, `hash_write_one()`, `hash_check()`, `hash_reason_summary()` and `empty_staleness()` implement the sidecar mechanism described under *Hash sidecars*.
 - `derive_columns.R` – the `addcols_*` transforms: `addcols_time()`, `addcols_distance()` (adds `distance`, plus `dist_diff` when device distance `dev_dist` is present), `addcols_speed()` (smoothed), `addcols_speed_naive()`, `addcols_latlng_offset()` (coordinates relative to the first fix, since the absolute values dwarf the within-activity variation). Pure tibble → tibble; documented as one family via `@describeIn`. Also holds `activity_col_order` and `relocate_activity_cols()`.
 - `strava_repo.R` – export import. `latest_strava_zip()` picks the most recent archive from a directory; `strava_zip_to_repo()` extracts it into a git repository, gzips the tracks that arrived uncompressed, and commits.
 - `activities_parquet.R` – `activity_streams_to_parquet()` converts archived activities to one Parquet file each, rebuilding only what changed. The internal `parquet_staleness()` decides what that is, newest first.
@@ -86,6 +86,22 @@ Template changes are deliberately not tracked. Editing `activity.qmd` rebuilds n
 Each stage exposes its check as a standalone function – `parquet_staleness()`, `activity_html_staleness()` – so that `press()` reports the same numbers before prompting as the step will act on. Hashing a thousand files takes a fraction of a second, so running the check twice is cheaper than threading its result between them. Do not reintroduce a directory count as a summary line: that is exactly the bug where 1073 files reported as converted while 1023 were stale.
 
 The superseded content-marker scheme is kept, unused, at the bottom of `utils.R` for reference.
+
+### Optional parallelism
+
+`starch_map()` in `utils.R` is `lapply()` that spreads across mirai daemons when any are running, and runs sequentially when they are not. There is no way to turn parallelism on from starch: `starch_parallel()` asks `mirai::status()[["connections"]]` about the default compute profile, and setting daemons is the user's business. mirai is a Suggests, so without it installed every caller quietly stays sequential.
+
+**The contract for a worker function.** It runs in a separate R process, so it must depend on nothing but its arguments and communicate nothing but its return value: no shared variables, no options, no working directory, no cli or logging calls, no printing. Return small values – a path or a flag, never a data frame. Write the output file inside the worker and return where it went. A worker that breaks this passes its tests sequentially and then fails, or silently does nothing, in parallel.
+
+A worker defined at package top level serialises as a reference to the starch namespace, so daemons load starch from the library rather than inheriting it. Under `devtools::load_all()` they will pick up the *installed* version; reinstall before trusting a parallel run.
+
+**Progress is polled in the wrapper, not delegated to mirai.** Do not replace this with `m[.progress]`. That option collects with `lapply(seq_len(xlen), ...)`, strictly in index order, so the bar cannot advance past the lowest unresolved task – measured on eight tasks with one slow straggler at the front, seven had finished at 0.3s while the in-order count still read zero, and it stayed at zero until 2.0s and then jumped to eight. It also offers no way to label the bar: `.opts` holds only `.flat`, `.progress` and `.stop`, and a `progress =` argument is silently swallowed. Polling `mirai::unresolved()` counts actual completions and keeps the caller's label.
+
+`starch_map()` sets `cli.progress_show_after = 0` for the duration of the bar, because cli otherwise hides it for two seconds and these steps often finish in less. Safe: the process is single-threaded and nothing else reads the option.
+
+Errors fail fast, as the sequential loop does – `m[.stop]` aborts on the first one and names the index that raised it. As with the sequential loop, an abort mid-run leaves earlier work done; under parallelism it is simply less predictable which.
+
+Dispatch costs about 0.3 ms per task, so mapping per file is fine for the hundreds of files these steps see. Chunking would be premature.
 
 ### The dashboard stacks
 
@@ -190,6 +206,7 @@ lat_offset, lng_offset             # recentred position
 - Activity tests live in `test-read_streams.R` and `test-derive_columns.R`; recordless workout behavior in `test-workouts.R`.
 - Golden tests use `summarize_stream()` (in `helper-fixtures.R`) to reduce a stream to one row per column – name, NA count, mean, and a hash for character columns – and compare with `expect_snapshot_value(style = "json2")`, with snapshots under `_snaps/`. Comparing summaries rather than hashing whole columns is deliberate: `expect_equal()` semantics keep a numeric tolerance, whereas a digest of a double vector is a bit-exactness test that fails across platforms, since the geodesic maths in `geodist` does not agree to the last bit between macOS/ARM and Linux/x86. Regenerate with `testthat::snapshot_accept()`.
 - `test-activity-html-staleness.R` covers the page stage against an on-disk fixture repository whose activity ids and stream stems deliberately disagree: id-based naming, rebuild on a changed Parquet file, rebuild on a changed manifest row, the awaiting-conversion state, the orphan sweep, the empty manifest, and the renderer's join. No Quarto, so it runs in CI.
+- `test-starch-map.R` covers `starch_map()` both ways. The parallel tests start two daemons themselves and are guarded by `skip_on_cran()` and `skip_if_not_installed("mirai")`, so a plain run exercises the sequential branch and `devtools::test()` exercises both.
 - `test-hashes.R` covers the sidecar layer – `hash_rows()`, the DCF round trip, unreadable sidecars, the `reason` values, and `parquet_staleness()` against an on-disk fixture repository. It needs no Strava data and no Quarto, so it runs in CI.
 - The import and dashboard functions have no tests yet (see open tasks).
 

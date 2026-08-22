@@ -33,7 +33,8 @@ The \code{gert::git_status()} table of what changed, invisibly.
 }
 \description{
 Extracts a Strava bulk export into a git repository, gzips the track files
-that arrived uncompressed, and commits the result. Running it against
+that arrived uncompressed - in parallel, if mirai daemons are running - and
+commits the result. Running it against
 successive exports builds a version-controlled history of the archive, in
 which each commit is one export and the diff is whatever actually changed.
 }

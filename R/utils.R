@@ -182,3 +182,75 @@ content_check <- function(infiles, outfiles, hash_dir) {
     hashfile = hashfiles
   )
 }
+
+
+# --- Optional parallelism -----------------------------------------------------
+
+# TRUE when mirai daemons are running on the default compute profile.
+#
+# mirai::status() is safe to call when none are set - it returns
+# `connections = 0` rather than erroring or initialising anything - so this is
+# cheap enough to ask at the start of every step. mirai is a Suggests: without
+# it installed, or without daemons set up, every caller quietly runs
+# sequentially. There is deliberately no way to turn parallelism on from
+# starch; setting daemons is the user's business.
+starch_parallel <- function() {
+  requireNamespace("mirai", quietly = TRUE) &&
+    isTRUE(mirai::status()[["connections"]] > 0L)
+}
+
+# lapply() over `.x`, spread across mirai daemons when any are running.
+#
+# `.f` is evaluated in a separate R process, so it must depend on nothing but
+# its arguments and communicate nothing but its return value: no shared
+# variables, no options, no working directory, no cli or logging calls, no
+# printing. Return small values - a path or a flag, never a data frame. A
+# worker that breaks this will still pass its tests sequentially and fail, or
+# silently do nothing, in parallel.
+#
+# Progress is polled here rather than delegated to mirai's `[.progress]`, for
+# two reasons. That option collects strictly in index order, so the bar cannot
+# advance past the lowest unresolved task: one straggler at the front pins it
+# at zero for the whole run and then it jumps to full, which is both useless
+# and slower to draw than counting completions. And it gives no way to label
+# the bar, so every step would report the same anonymous count.
+#
+# Errors are left to fail fast, as the sequential loop does. `.stop` aborts on
+# the first error and names the index that raised it.
+starch_map <- function(.x, .f, ..., .label = "Working", .quiet = FALSE) {
+  n <- length(.x)
+  if (n == 0L) return(list())
+
+  if (!.quiet) {
+    # cli hides a bar for its first two seconds, which for a step lasting a few
+    # seconds means never showing one at all. Safe to override for the duration:
+    # this process is single-threaded and nothing else reads the option.
+    old <- options(cli.progress_show_after = 0)
+    on.exit(options(old), add = TRUE)
+    cli::cli_progress_bar(
+      format = bar_format(.label), total = n, clear = FALSE
+    )
+  }
+
+  if (!starch_parallel()) {
+    out <- vector("list", n)
+    for (i in seq_len(n)) {
+      out[[i]] <- .f(.x[[i]], ...)
+      if (!.quiet) cli::cli_progress_update()
+    }
+    if (!.quiet) cli::cli_progress_done()
+    return(out)
+  }
+
+  m <- mirai::mirai_map(.x, .f, .args = list(...))
+  if (!.quiet) {
+    repeat {
+      done <- n - sum(vapply(m, mirai::unresolved, logical(1)))
+      cli::cli_progress_update(set = done)
+      if (done == n) break
+      Sys.sleep(0.2)
+    }
+    cli::cli_progress_done()
+  }
+  m[.stop]
+}
